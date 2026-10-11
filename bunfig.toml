@@ -1,0 +1,14 @@
+[install]
+# Supply-chain hardening: no dependency lifecycle scripts on install —
+# completes the F16 set (server/ and frontend/ each carry the same pair;
+# this covers an install run from the repo root).
+ignoreScripts = true
+
+[test]
+# `bun test` from the repo root discovers server/tests/** but — without this —
+# NOT server/bunfig.toml's preload, because bun reads the bunfig of the cwd
+# only. The result was 40 phantom failures ("Missing required env var:
+# API_AUTH_TOKEN") that made a clean checkout look broken and once burned an
+# audit into comparing failure sets instead of trusting counts. Same preload,
+# root-relative path, so `bun test` and `bun run test` agree from anywhere.
+preload = ["./server/tests/setup.ts"]

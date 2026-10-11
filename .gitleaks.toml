@@ -1,0 +1,57 @@
+# gitleaks config — defi-farmer
+# Secret-scanning guardrail (pre-public prerequisite). Runs in CI
+# (.github/workflows/secret-scan.yml). Pinned to gitleaks 8.30.1 semantics
+# (same version installed locally and used for the baseline scan below).
+#
+# Baseline (2026-09-08): a full-history scan (177 commits, ~3.47 MB) and a
+# tracked-working-tree scan (189 files, ~1.26 MB) both surfaced the SAME single
+# finding — the allowlist entry below, verified benign. Do not broaden either
+# entry beyond what it targets without a fresh reason; the goal is a scanner a
+# real secret still trips, not one anybody has learned to click past.
+
+title = "defi-farmer gitleaks config"
+
+[extend]
+# Inherit gitleaks' full default ruleset, then narrow with the allowlist below.
+useDefault = true
+
+[allowlist]
+description = "Known non-secret placeholders and test fixtures"
+
+# .env.example is committed documentation of the shape of the real .env (which
+# is gitignored and never committed — see .gitignore). It exists specifically
+# to hold placeholder, credential-shaped strings, so it is allowlisted by path.
+# This is a preventative entry, not backed by a current finding: the 2026-09-08
+# baseline scan found nothing in .env.example itself.
+paths = [
+  '''\.env\.example$''',
+  '''\.env\.sample$''',
+]
+
+# Match against the captured secret value, not the file path, for everything
+# below — so a real credential landing in the same file still trips the scan.
+regexTarget = "match"
+regexes = [
+  # server/tests/lending-venues.test.ts:119,123,173 — XRD_KEY_HEX.
+  # This is a mock Gateway `raw_hex` key for a synthetic
+  # `internal_keyvaluestore_rdx1...` entry (see the KVS constant one line
+  # above it in the same file), used to fabricate a Weft V2 lending-position
+  # response in a unit test. It is on-chain-shaped lookup-key data, not a
+  # private key: nothing in this codebase treats it as key material, signs
+  # with it, or derives an address from it, and the surrounding code passes
+  # it straight into a hand-built JSON fixture that stands in for a Radix
+  # Gateway `/state/key-value-store/data` response. gitleaks' entropy-based
+  # generic-api-key rule flags it purely on its shape (a 64-hex-char literal
+  # assigned to a SCREAMING_CASE constant), the same way it flagged an
+  # analogous hand-typed KEY_HEX test vector in the Guild repo
+  # (radixguild/guild's .gitleaks.toml has the fuller writeup of that case).
+  #
+  # Pinned as an exact literal, not a pattern, on the same reasoning the Guild
+  # repo documents for its own case: a pattern here could mask a real key of the
+  # same shape landing elsewhere in the codebase; a literal cannot mask
+  # anything but itself. This entry cannot shrink even if the fixture is later
+  # rewritten to look less credential-shaped at the source, because gitleaks
+  # scans full history and the literal stays in every commit back to
+  # 1ecea1d857a960b5f272b5ccc05a25fb3984f56a (2026-07-25) regardless.
+  '''5c805da66318c6318c61f5a61b4c6318c6318cf794aa8d295f14e6318c6318c6''',
+]

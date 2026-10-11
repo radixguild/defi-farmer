@@ -1,0 +1,32 @@
+node_modules/
+dist/
+# bun.lock is committed at the root, frontend/ and server/ (S12, 2026-09-17
+# security review): each is a real dependency tree with its own package.json,
+# and CI's `--frozen-lockfile` install is a no-op without a lockfile to pin
+# against. bun.lockb (the older binary format) is still ignored — this repo
+# only ever produces the text `bun.lock`.
+bun.lockb
+.env
+data/
+target/
+.aider*
+
+# Runtime logs
+server/logs/
+
+# Claude agent worktrees (local only)
+.claude/worktrees/
+
+# Claude skills (local tooling, not part of the shipped app)
+.claude/skills/
+
+# Retired docs kept on this machine only
+.local-archive/
+
+# Filled-in manifests from scripts/rotate-dapp-def.mjs --manifest. They name an
+# account that is not yet the live dApp definition; the template is the artifact
+# worth versioning, not a one-off substitution of it.
+scripts/manifests/*.generated.txt
+
+# Agentic dev workflow tooling/state (local only, not part of the shipped app)
+adws/

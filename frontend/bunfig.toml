@@ -1,0 +1,7 @@
+[install]
+# Supply-chain hardening: no dependency lifecycle scripts on install —
+# mirrors frontend/.npmrc for whichever tool runs the install. The deploy
+# syncs frontend/ alone and runs `bun install` on the host, where the root
+# .npmrc is not in scope; server/ already had this pair, frontend/ was the
+# half of the 2026-07-17 security review's F16 left open.
+ignoreScripts = true

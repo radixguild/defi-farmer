@@ -1,0 +1,16 @@
+{
+  // The 306 tests under tests/ were never typechecked by anything — locally or
+  // in CI (REVIEW-2026-07-17 F2). Type errors in test code (stale call
+  // signatures against refactored src/ exports, wrong mock shapes) merged
+  // silently; only a runtime assertion failure caught them.
+  //
+  // A separate config rather than adding "tests" to tsconfig.json's include:
+  // that file carries build settings (rootDir: "src", outDir, declaration), so
+  // widening it would make tsc try to emit the test files and fight rootDir.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src", "tests"]
+}

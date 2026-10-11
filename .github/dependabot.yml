@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # S11 (2026-09-17 security review): every workflow `uses:` is now pinned to
+  # a full commit SHA (see the trailing `# vX.Y.Z` comment on each line) so a
+  # tag can't be force-moved to point at different code underneath a running
+  # pin. Dependabot is what keeps those pins from going stale — it opens a PR
+  # bumping the SHA (and the version comment) when a new release ships.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

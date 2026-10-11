@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  frontend:
+    name: Frontend (typecheck + Next build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          # Pinned (all three jobs): bun 1.3.14 regressed --frozen-lockfile —
+          # it re-resolves typescript's spec to the yanked 5.7.0 floor instead
+          # of honoring the lock's 5.9.3. 1.3.12 reads the lock correctly.
+          bun-version: 1.3.12
+      - run: bun install --frozen-lockfile
+      # tsc is the gate that was missing when the broken positions sign-flow
+      # merged (REVIEW-2026-07-17 F1/F2) — never drop it.
+      - run: bunx tsc --noEmit
+      # The gift-rail guard (lib/gift) is money-routing validation: a bad
+      # address here is unrecoverable BTC. Runs before the build so a broken
+      # checksum verifier fails fast rather than shipping a dark page.
+      - run: bun test tests/
+      - run: bunx next build
+
+  server-test:
+    name: Server (Bun test)
+    # ubuntu-slim: sub-minute job; minutes bill per job rounded up, so only the
+    # runner rate matters ($0.002/min vs $0.006 — see radixguild/guild test.yml).
+    runs-on: ubuntu-slim
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.12
+      # frozen-lockfile: server/bun.lock is now committed (S12, 2026-09-17
+      # security review) — before this, no lockfile existed here so this
+      # flag would have been a no-op even if set.
+      - run: bun install --frozen-lockfile
+      - run: bun test
+
+  server-typecheck:
+    name: Server (typecheck)
+    # ubuntu-slim: sub-minute job; minutes bill per job rounded up, so only the
+    # runner rate matters ($0.002/min vs $0.006 — see radixguild/guild test.yml).
+    runs-on: ubuntu-slim
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.12
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+
+  dependency-audit:
+    # NOT a required check — branch protection requires only the three jobs
+    # above plus gitleaks, and this one stays out of that list on purpose: a
+    # newly published advisory should turn it red on the next run, not block
+    # an unrelated merge. Why it exists: GitHub's dependency graph for this
+    # repo parses package.json only, never bun.lock, so Dependabot cannot see
+    # a single transitive package (sharp, valibot, braces, …). "0 Dependabot
+    # alerts" here proves nothing; `bun audit` reads the committed lockfiles.
+    name: Dependency audit
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          # Same pin as the jobs above. 1.3.12 already supports --audit-level
+          # and --ignore (GHSA IDs); audit reads bun.lock and never writes it,
+          # and needs no `bun install` first.
+          bun-version: 1.3.12
+      - name: audit server/ (high and above)
+        working-directory: server
+        run: bun audit --audit-level=high
+      - name: audit frontend/ (high and above, triaged GHSAs ignored)
+        # Run even if the server audit failed, so one red run shows both trees.
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        # Each --ignore is a triaged advisory with no fix reachable from this
+        # repo. Drop the flag the moment a fix lands:
+        #   GHSA-vfj7-8cjw-p6xm  braces <=3.0.3 — no patched release exists;
+        #     build-time only (tailwindcss and eslint-config-next via
+        #     micromatch), matching patterns this repo writes itself.
+        #   GHSA-vqpr-j7v3-hqw9  valibot EMOJI_REGEX ReDoS — exact pin 0.42.1
+        #     in @radixdlt/radix-dapp-toolkit 2.3.0 (= latest), client-side;
+        #     the toolkit never imports valibot's emoji validator.
+        run: >-
+          bun audit --audit-level=high
+          --ignore=GHSA-vfj7-8cjw-p6xm
+          --ignore=GHSA-vqpr-j7v3-hqw9

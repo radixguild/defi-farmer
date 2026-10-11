@@ -1,0 +1,27 @@
+{
+  "name": "defi-farmer",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Non-custodial DeFi yield advisor and dapp for Radix",
+  "scripts": {
+    "dev": "cd frontend && next dev",
+    "build": "cd frontend && bunx next build",
+    "start": "cd frontend && next start",
+    "agent": "cd server && bun run dev",
+    "agent:start": "cd server && bun run start",
+    "type-check": "cd server && bun run typecheck && cd ../frontend && tsc --noEmit",
+    "lint": "echo 'No linter configured'",
+    "test": "bun run test:server && bun run test:frontend",
+    "test:server": "cd server && bun test",
+    "test:frontend": "cd frontend && bun test tests/",
+    "validate": "bun run type-check && bun run lint && bun run test"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

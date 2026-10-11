@@ -1,0 +1,7 @@
+[install]
+# Supply-chain hardening: no dependency lifecycle scripts on install —
+# mirrors server/.npmrc for whichever tool runs the install (F16).
+ignoreScripts = true
+
+[test]
+preload = ["./tests/setup.ts"]

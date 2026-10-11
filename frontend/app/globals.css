@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 222 47% 11%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 91%;
+    --ring: 222 47% 11%;
+    --radius: 0.5rem;
+
+    --profit-green: 142 71% 45%;
+    --loss-red: 0 84% 60%;
+    --risk-yellow: 45 93% 47%;
+    --risk-orange: 24 95% 53%;
+
+    --neutral-50: 210 40% 98%;
+    --neutral-100: 210 40% 96%;
+    --neutral-200: 214 32% 91%;
+    --neutral-300: 213 27% 84%;
+    --neutral-400: 215 20% 65%;
+    --neutral-500: 215 16% 47%;
+    --neutral-600: 215 19% 35%;
+    --neutral-700: 215 25% 27%;
+    --neutral-800: 217 33% 17%;
+    --neutral-900: 222 47% 11%;
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 215 25% 27%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 215 25% 27%;
+    --muted-foreground: 215 20% 65%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 215 25% 27%;
+    --ring: 214 32% 91%;
+
+    --profit-green: 142 71% 45%;
+    --loss-red: 0 84% 60%;
+    --risk-yellow: 45 93% 47%;
+    --risk-orange: 24 95% 53%;
+
+    --neutral-50: 222 47% 11%;
+    --neutral-100: 217 33% 17%;
+    --neutral-200: 215 25% 27%;
+    --neutral-300: 215 19% 35%;
+    --neutral-400: 215 16% 47%;
+    --neutral-500: 215 20% 65%;
+    --neutral-600: 213 27% 84%;
+    --neutral-700: 214 32% 91%;
+    --neutral-800: 210 40% 96%;
+    --neutral-900: 210 40% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

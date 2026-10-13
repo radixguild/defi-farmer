@@ -1,12 +1,13 @@
 # State
 
-_Updated 2026-10-11. This is the project's public status page. It changes when the facts
+_Updated 2026-10-13. This is the project's public status page. It changes when the facts
 change, not on a schedule._
 
 ## Deployed
 
-Live since August 2026 as a non-custodial advisor on Radix mainnet. Its public address is
-moving to a radixguild.com subdomain, which is not live yet. It reads public ledger and DEX
+Live since August 2026 as a non-custodial advisor on Radix mainnet at
+`farmer.156-67-219-105.sslip.io`. A move to a radixguild.com subdomain was considered and
+dropped on 2026-10-11; the address stays as it is. It reads public ledger and DEX
 state, scores it, and builds manifests for the connected wallet to review and sign. There is
 no server-side key and no custody (see the [README](README.md)). The deploy tooling behind
 it is not part of this repository.

@@ -2,12 +2,13 @@
 
 import { RotationEntry } from "@/lib/types";
 import { mockRotationPending } from "@/lib/mocks";
-import { useFetch } from "./use-fetch";
+import { useAccountFetch } from "./use-fetch";
 
-// Pending rotations are awaiting operator approve/reject. 30s polling so
-// state changes (other operator approved, agent auto-rejected) propagate.
+// Pending rotation proposals for the signed-in wallet (session tier; the
+// server returns only rows that carry the session's account). Account read:
+// no sample fallback. 30s polling so state changes propagate.
 export function useRotationPending() {
-  return useFetch<RotationEntry[]>("/api/rotation/pending", mockRotationPending, {
+  return useAccountFetch<RotationEntry[]>("/api/rotation/pending", mockRotationPending, {
     refreshIntervalMs: 30_000,
   });
 }

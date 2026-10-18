@@ -2,10 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Info } from "lucide-react";
-import { useWallet } from "@/lib/hooks/use-wallet";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 
 interface Settings {
   apyDropThreshold: number;
@@ -100,7 +98,6 @@ function LocalOnlyNotice() {
 }
 
 export default function SettingsPage() {
-  const { connected, accounts } = useWallet();
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [mounted, setMounted] = useState(false);
 
@@ -243,30 +240,12 @@ export default function SettingsPage() {
           <CardTitle className="text-base">Connected Wallet</CardTitle>
         </CardHeader>
         <CardContent>
-          {connected && accounts.length > 0 ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Address</span>
-                <span className="font-mono text-xs">
-                  {accounts[0].address.slice(0, 16)}...{accounts[0].address.slice(-8)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Network</span>
-                <span className="text-sm">Radix Mainnet</span>
-              </div>
-              <Button variant="outline" size="sm" className="w-full mt-2" disabled>
-                Disconnect
-              </Button>
-              <p className="text-xs text-muted-foreground text-center">
-                Use the Radix Wallet extension to disconnect
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No wallet connected. Connect your Radix wallet to manage settings.
-            </p>
-          )}
+          {/* The toolkit's own button shows the account and persona and offers
+              update-sharing and disconnect; this card does not duplicate it. */}
+          <p className="text-sm text-muted-foreground">
+            Your connected account, persona and disconnect are in the Connect
+            button at the top of the page (Radix Mainnet).
+          </p>
         </CardContent>
       </Card>
     </main>

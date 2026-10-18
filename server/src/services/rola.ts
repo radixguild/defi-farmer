@@ -1,7 +1,7 @@
 /// Server-side ROLA (Radix Off-Ledger Auth) — ported from the Guild app's
 /// implementation (battle-tested through the 2026-06-11 mainnet smoke).
 ///
-/// - issueChallenge() → fresh 32-byte nonce, stored in-memory with a 60s TTL.
+/// - issueChallenge() → fresh 32-byte nonce, stored in-memory with a 5-minute TTL.
 /// - verifyAndConsume(signedChallenge) → one-time-consumes the nonce, then
 ///   verifies the signature against the on-chain owner key via @radixdlt/rola
 ///   (canonical message build + Gateway lookup + signature check).
@@ -9,9 +9,15 @@
 /// Identity = ACCOUNT address (SignedChallenge type "account"), not persona —
 /// positions/portfolios are account-keyed on-chain (PHASE-3.1-DESIGN D1).
 ///
-/// The nonce store is in-memory: nonces are 60s-lived and single-use, so
+/// The nonce store is in-memory: nonces are short-lived and single-use, so
 /// restart loss is harmless (user re-signs). Sessions, by contrast, live in
 /// SQLite (services/sessions.ts).
+///
+/// Five minutes, not 60 s: on a phone the √ Connect flow deep-links to the
+/// wallet app, the user reviews and signs there, and the response comes back
+/// through the Radix Connect relay. A minute was tight for that round trip.
+/// Lifetime does not weaken replay protection: a nonce is still consumed on
+/// first use, success or failure.
 
 import { randomBytes } from 'crypto';
 import { Rola, type SignedChallenge } from '@radixdlt/rola';
@@ -19,7 +25,7 @@ import { CONFIG } from '../config.js';
 
 export type { SignedChallenge };
 
-const CHALLENGE_TTL_MS = 60_000;
+const CHALLENGE_TTL_MS = 5 * 60_000;
 
 const store = new Map<string, number>(); // challenge -> expires_at (ms epoch)
 

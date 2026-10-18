@@ -44,6 +44,12 @@ describe("decideSession", () => {
   test("connected (restored from storage) with no server session: sign out", () => {
     expect(decideSession([A], null, true)).toBe("sign-out");
   });
+
+  test("more than one shared account: sign out, even when the session's is among them", () => {
+    // Deposits and exits sign from accounts[0]; it must BE the session account.
+    expect(decideSession([A, B], A, true)).toBe("sign-out");
+    expect(decideSession([B, A], A, true)).toBe("sign-out");
+  });
 });
 
 const FRONTEND = join(import.meta.dir, "..");

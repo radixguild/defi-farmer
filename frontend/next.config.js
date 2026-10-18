@@ -12,10 +12,17 @@ const nextConfig = {
   async headers() {
     // CSP: lock script and connect targets so a hypothetical XSS can't (a)
     // load attacker scripts, or (b) call sendTransaction with an
-    // attacker-controlled manifest by talking to a different origin. The
-    // Radix wallet connector bridges via `radix:` deep links + postMessage,
-    // not a remote HTTP endpoint, so connect-src only needs the dapp's own
-    // /api proxy + the Radix Gateway.
+    // attacker-controlled manifest by talking to a different origin.
+    // connect-src lists exactly what the dApp Toolkit (2.3.0) fetches:
+    //   - the dapp's own /api proxy ('self');
+    //   - the Radix Gateway (transaction status polling);
+    //   - the Radix Connect relay. On mobile the toolkit deep-links to the
+    //     wallet app (`radixWallet://connect`, a top-level navigation that
+    //     connect-src does not govern) and then POSTs to
+    //     https://radix-connect-relay.radixdlt.com/api/v1 to collect the
+    //     wallet's encrypted response. Without it the √ Connect button cannot
+    //     complete on a phone. The desktop Connector extension talks to the
+    //     page through window events and needs no entry here.
     //
     // Next.js App Router today requires 'unsafe-inline' on script for the
     // App Router runtime; nonce-based CSP is supported but fragile. We pick
@@ -29,7 +36,7 @@ const nextConfig = {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
-      "connect-src 'self' https://mainnet.radixdlt.com https://stokenet.radixdlt.com",
+      "connect-src 'self' https://mainnet.radixdlt.com https://stokenet.radixdlt.com https://radix-connect-relay.radixdlt.com",
       "frame-ancestors 'none'",
       "form-action 'self'",
       "base-uri 'self'",

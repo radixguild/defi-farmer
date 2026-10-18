@@ -328,6 +328,11 @@ const routes: Route[] = [
       if (!result.ok) {
         return json({ error: `Authentication failed: ${result.error}` }, 401, corsOrigin);
       }
+      // Re-verifying (the wallet switched account, or connected again) ends
+      // the session this browser already held, so the old token does not
+      // stay valid server-side until it expires.
+      const previous = getSessionToken(req);
+      if (previous) deleteSession(previous);
       const { token, maxAgeSeconds } = createSession(result.address);
       return json({ ok: true, address: result.address }, 200, corsOrigin, {
         'Set-Cookie': sessionCookieHeader(token, maxAgeSeconds),

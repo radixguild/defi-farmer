@@ -10,7 +10,9 @@
  *
  *   - the wallet shares nothing (the user disconnected in the button) while a
  *     session exists                     → sign out
- *   - the wallet shares an account that is not the session's account
+ *   - the wallet shares anything other than exactly the session's account:
+ *     a different account, or more than one (deposits and exits sign from
+ *     the first shared account, so it must BE the session account)
  *                                         → sign out (and disconnect the button)
  *   - the wallet is connected but the server holds no session for it, e.g. the
  *     toolkit restored its state from storage after the cookie expired
@@ -29,5 +31,5 @@ export function decideSession(
   if (!hydrated) return "keep";
   if (sharedAccounts.length === 0) return sessionAddress ? "sign-out" : "keep";
   if (!sessionAddress) return "sign-out";
-  return sharedAccounts.includes(sessionAddress) ? "keep" : "sign-out";
+  return sharedAccounts.length === 1 && sharedAccounts[0] === sessionAddress ? "keep" : "sign-out";
 }

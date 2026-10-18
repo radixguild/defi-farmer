@@ -23,7 +23,8 @@ Random 32-byte token, SHA-256 stored (never the raw token), 30-day TTL, sliding 
 Cookie flows through the existing same-origin Next.js proxy (`app/api/[...path]/route.ts`) —
 allowlist exactly the `farmer_session` cookie both directions. No CORS dance, no token in JS,
 survives agent restarts (unlike the Guild app's in-memory store — we have SQLite on both ends anyway).
-Challenge nonces stay in-memory (60s TTL, one-time consume) exactly like the Guild app.
+Challenge nonces stay in-memory (one-time consume) exactly like the Guild app. The TTL was 60s
+at design time and is 5 minutes since 2026-10-18, for the mobile wallet round trip.
 
 **D3 — Three-tier API auth (replaces "one shared token for everything"):**
 | Tier | Guard | Endpoints |

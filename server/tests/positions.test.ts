@@ -407,7 +407,7 @@ describe('positions API scoping (D4)', () => {
     expect(res.status).toBe(400);
   });
 
-  test('rotation telemetry is operator-tier', async () => {
+  test('rotation proposals need an identity; the Bearer sees them (scoping: account-scope.test.ts)', async () => {
     const anon = await fetch(`${BASE}/api/rotation/pending`);
     expect(anon.status).toBe(401);
     const op = await fetch(`${BASE}/api/rotation/pending`, {

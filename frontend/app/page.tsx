@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { useOpportunities, usePositions, useAgentStatus } from "@/lib/hooks";
-import { useWallet } from "@/lib/hooks/use-wallet";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HealthDot } from "@/components/health-dot";
 import { RiskMeter } from "@/components/risk-meter";
-import { ConnectWalletButton } from "@/components/connect-wallet-button";
+import { DataSourceBanner } from "@/components/data-source-banner";
+import type { DataSource } from "@/lib/hooks/use-fetch";
 import {
   apyTone,
   formatApy,
@@ -109,13 +109,11 @@ function DashboardHeader({
   lastScan,
   running,
   halted,
-  connected,
 }: {
   count: number;
   lastScan: number | null;
   running: boolean;
   halted: boolean;
-  connected: boolean;
 }) {
   const state = halted ? "halted" : running ? "running" : "stopped";
   const tone = halted
@@ -133,7 +131,6 @@ function DashboardHeader({
           {timeAgo(lastScan)} · agent <span className={tone}>{state}</span>
         </p>
       </div>
-      {!connected && <ConnectWalletButton />}
     </div>
   );
 }
@@ -311,7 +308,43 @@ function PositionCard({ position }: { position: Position }) {
   );
 }
 
-function PortfolioSection({ positions }: { positions: Position[] }) {
+/**
+ * The signed-in wallet's own positions. Signed out, or when the read fails,
+ * this shows a prompt or a notice and NO numbers: never sample positions, which
+ * would read as the visitor's money (useAccountFetch).
+ */
+function PortfolioSection({
+  positions,
+  source,
+  error,
+}: {
+  positions: Position[] | null;
+  source: DataSource;
+  error: string | null;
+}) {
+  if (source === "signed-out") {
+    return (
+      <div className="w-full flex flex-col gap-2">
+        <h2 className="text-lg font-semibold">Your positions</h2>
+        <p className="text-sm text-muted-foreground">
+          Sign in with your Radix Wallet to see your positions: use the Connect
+          button at the top of the page.
+        </p>
+      </div>
+    );
+  }
+  if (source === "unavailable" || positions === null) {
+    return (
+      <div className="w-full flex flex-col gap-2">
+        <h2 className="text-lg font-semibold">Your positions</h2>
+        <p className="text-sm text-muted-foreground">
+          {source === "unavailable"
+            ? "Your positions are unavailable right now. Nothing is shown in their place; try again shortly."
+            : "Loading your positions…"}
+        </p>
+      </div>
+    );
+  }
   if (positions.length === 0) {
     return (
       <div className="w-full flex flex-col gap-2">
@@ -335,6 +368,7 @@ function PortfolioSection({ positions }: { positions: Position[] }) {
 
   return (
     <div className="w-full flex flex-col gap-4">
+      <DataSourceBanner source={source} message={error} />
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Your positions</h2>
         <Link
@@ -363,14 +397,19 @@ function PortfolioSection({ positions }: { positions: Position[] }) {
 }
 
 export default function Home() {
-  const { connected } = useWallet();
   // Pull the full set, not three: the summary counts are only honest over
   // everything that is tracked.
   const { data: opportunities, isLoading: oppsLoading } = useOpportunities(50);
-  const { data: positions, isLoading: posLoading } = usePositions();
+  // Account read: only the signed-in wallet's own rows, nothing while signed out.
+  const {
+    data: positions,
+    isLoading: posLoading,
+    dataSource: posSource,
+    error: posError,
+  } = usePositions();
   const { data: status } = useAgentStatus();
 
-  const isLoading = oppsLoading || (connected && posLoading);
+  const isLoading = oppsLoading || posLoading;
 
   if (isLoading) {
     return (
@@ -395,9 +434,12 @@ export default function Home() {
           lastScan={status?.lastScan ?? null}
           running={status?.running ?? false}
           halted={status?.halted ?? false}
-          connected={connected}
         />
-        {connected && <PortfolioSection positions={positions ?? []} />}
+        <PortfolioSection
+          positions={positions}
+          source={posSource}
+          error={posError}
+        />
         {opps.length > 0 && (
           <>
             <MarketSummary opportunities={opps} />

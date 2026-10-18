@@ -5,6 +5,7 @@ import { ThemeProvider } from "next-themes";
 import { RadixProvider } from "@/lib/radix-provider";
 import { BottomNav, SideNav } from "@/components/navigation";
 import { PageTransition } from "@/components/page-transition";
+import { ConnectWalletButton } from "@/components/connect-wallet-button";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -32,6 +33,11 @@ export default function RootLayout({
           <RadixProvider>
             <SideNav />
             <div className="md:ml-56 pb-20 md:pb-0">
+              {/* The one √ Connect button (see connect-wallet-button.tsx): visible
+                  at every width, above every page. */}
+              <header className="flex justify-end px-6 pt-4 md:px-12">
+                <ConnectWalletButton />
+              </header>
               <PageTransition>{children}</PageTransition>
             </div>
             <BottomNav />

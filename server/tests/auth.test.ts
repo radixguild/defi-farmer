@@ -44,11 +44,22 @@ afterAll(() => {
 });
 
 describe('rola service', () => {
-  test('issueChallenge returns a 64-hex nonce with a future expiry', () => {
+  test('issueChallenge returns a 64-hex nonce that lives five minutes', () => {
+    const before = Date.now();
     const { challenge, expires_at } = issueChallenge();
     expect(challenge).toMatch(/^[a-f0-9]{64}$/);
-    expect(expires_at).toBeGreaterThan(Date.now());
+    expect(_testHooks.CHALLENGE_TTL_MS).toBe(5 * 60_000);
+    expect(expires_at).toBeGreaterThanOrEqual(before + 5 * 60_000);
+    expect(expires_at).toBeLessThanOrEqual(Date.now() + 5 * 60_000);
     expect(_testHooks.store.has(challenge)).toBe(true);
+  });
+
+  test('a nonce issued two minutes ago still verifies, once (mobile round trip)', async () => {
+    const { challenge } = issueChallenge();
+    // Issued 2 min ago: 3 min of its 5 left. A 60 s TTL would have refused it.
+    _testHooks.store.set(challenge, Date.now() + 3 * 60_000);
+    expect(await verifyAndConsume(makeProof(challenge))).toEqual({ ok: true, address: ADDRESS });
+    expect(await verifyAndConsume(makeProof(challenge))).toEqual({ ok: false, error: 'unknown_challenge' });
   });
 
   test('verifyAndConsume succeeds and consumes the nonce', async () => {
@@ -211,6 +222,40 @@ describe('auth API flow', () => {
       headers: { Authorization: `Bearer ${OPERATOR}` },
     });
     expect(op.status).toBe(200);
+  });
+
+  test('verifying again ends the session the browser already held', async () => {
+    const first = await signIn();
+    const { challenge } = (await (await fetch(`${BASE}/api/auth/challenge`)).json()) as {
+      challenge: string;
+    };
+    const again = await fetch(`${BASE}/api/auth/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: first },
+      body: JSON.stringify({ signedChallenge: makeProof(challenge) }),
+    });
+    expect(again.status).toBe(200);
+    const second = `farmer_session=${again.headers.get('set-cookie')?.match(/farmer_session=([a-f0-9]{64})/)?.[1]}`;
+    expect(second).not.toBe(first);
+
+    expect((await fetch(`${BASE}/api/auth/me`, { headers: { Cookie: first } })).status).toBe(401);
+    expect((await fetch(`${BASE}/api/auth/me`, { headers: { Cookie: second } })).status).toBe(200);
+    expect(testDb.prepare('SELECT COUNT(*) AS n FROM sessions').get()).toEqual({ n: 1 });
+  });
+
+  test('a failed verify leaves the existing session alone', async () => {
+    const first = await signIn();
+    setVerifierForTests(verifierFail);
+    const { challenge } = (await (await fetch(`${BASE}/api/auth/challenge`)).json()) as {
+      challenge: string;
+    };
+    const res = await fetch(`${BASE}/api/auth/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: first },
+      body: JSON.stringify({ signedChallenge: makeProof(challenge) }),
+    });
+    expect(res.status).toBe(401);
+    expect((await fetch(`${BASE}/api/auth/me`, { headers: { Cookie: first } })).status).toBe(200);
   });
 
   test('logout revokes the session', async () => {

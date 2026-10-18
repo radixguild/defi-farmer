@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Compass, BarChart3, Settings, ShieldCheck, Wallet, Gift } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SignInButton } from "@/components/sign-in-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { isGiftPageLive } from "@/lib/gift";
 
@@ -88,7 +87,6 @@ export function SideNav() {
         })}
       </div>
       <div className="mt-auto px-3 pb-2 space-y-3">
-        <SignInButton />
         <ThemeToggle />
       </div>
     </nav>

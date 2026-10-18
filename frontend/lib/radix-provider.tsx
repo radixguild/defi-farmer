@@ -14,6 +14,7 @@ import type {
   SendTransactionResult,
   WalletDataStateAccount,
 } from "@radixdlt/radix-dapp-toolkit";
+import { decideSession } from "@/lib/wallet-session";
 
 /** Matches @radixdlt/rola's SignedChallenge — sent to POST /api/auth/verify. */
 export type SignedChallenge = {
@@ -28,26 +29,22 @@ export type SignedChallenge = {
 };
 
 export interface WalletContextValue {
+  /** The √ Connect button shares an account. */
   connected: boolean;
   accounts: WalletDataStateAccount[];
   sendTransaction: (input: SendTransactionInput) => SendTransactionResult | undefined;
   extensionDetected: boolean;
-  /** True once a farmer_session exists (hydrated from /me or set via signIn). */
+  /** True once a farmer_session exists (hydrated from /me, or set when the connect proof verified). */
   authed: boolean;
   /** The ROLA-verified account address behind the session, or null. */
   authAddress: string | null;
   /**
-   * True when the session's account is NOT among the accounts the wallet
-   * currently shares. Ported from the Guild app (2026-06-11 mainnet smoke):
-   * actions that bind a tx to the session identity should block on this.
-   * Normally self-heals — the provider drops such sessions on wallet change.
+   * True when a server session exists. Connecting through the √ Connect button
+   * IS the sign-in, so there is no separate step to run here; a caller that
+   * gets false tells the user to connect.
    */
-  sessionMismatch: boolean;
-  /** ROLA sign-in: wallet signature → POST /verify → session cookie. False on cancel/failure. */
-  signIn: () => Promise<boolean>;
-  /** No-op if already authed, else runs signIn. Call before session-tier writes. */
   ensureSession: () => Promise<boolean>;
-  /** Clear the server session and local auth state. */
+  /** Clear the server session and disconnect the √ Connect button. */
   signOut: () => Promise<void>;
 }
 
@@ -58,8 +55,6 @@ export const WalletContext = createContext<WalletContextValue>({
   extensionDetected: true,
   authed: false,
   authAddress: null,
-  sessionMismatch: false,
-  signIn: async () => false,
   ensureSession: async () => false,
   signOut: async () => {},
 });
@@ -75,41 +70,36 @@ const DAPP_DEFINITION_ADDRESS =
   "account_rdx12yp8wps97gzj9w6fq022xzdcw540qettg39neumev7mla6k9lggfna";
 
 /**
- * Decide what happens to the session when the wallet's shared-account set
- * changes. Pure; ported verbatim from the Guild app's useWallet (unit-tested
- * there; every branch traces to a 2026-06-11 mainnet smoke incident):
- *   - no shared accounts          → drop (wallet disconnected)
- *   - no session                  → keep (nothing to drop)
- *   - session account not shared  → drop (its authority was removed)
- *   - primary changed to a new value that isn't the session's account → drop
- *   - otherwise                   → keep (proving a non-first account must
- *     NOT drop the session — accounts[0]-equality logout-looped
- *     multi-account wallets, guild #151)
+ * Wallet state for the app, built on the standard Radix dApp Toolkit flow:
+ *
+ *   - The toolkit's own √ Connect button (components/connect-wallet-button.tsx,
+ *     mounted once in the layout) is the only wallet UI: connect, the shared
+ *     account and persona, update sharing, and disconnect all live there.
+ *   - Its data request asks for exactly one account WITH a ROLA proof. The
+ *     challenge comes from the backend (provideChallengeGenerator), and
+ *     dataRequestControl posts the proof to /api/auth/verify BEFORE the toolkit
+ *     accepts the login. A proof the server rejects fails the connect, so the
+ *     button can never show an account the server has not verified.
+ *   - decideSession (lib/wallet-session.ts) ends every other state: a
+ *     disconnect in the button, a change to an account that is not the
+ *     session's, or a restored connection with no live server session all sign
+ *     out (server session cleared, button disconnected). There is no warning
+ *     state to fall out of step with.
  */
-export function decideSession(
-  shared: string[],
-  sessionAddress: string | null,
-  prevPrimary: string | null,
-): "drop" | "keep" {
-  if (shared.length === 0) return "drop";
-  if (!sessionAddress) return "keep";
-  if (!shared.includes(sessionAddress)) return "drop";
-  const newPrimary = shared[0];
-  if (prevPrimary !== null && newPrimary !== prevPrimary && sessionAddress !== newPrimary) {
-    return "drop";
-  }
-  return "keep";
-}
-
 export function RadixProvider({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState<WalletDataStateAccount[]>([]);
   const [extensionDetected, setExtensionDetected] = useState(true);
   const [authAddress, setAuthAddress] = useState<string | null>(null);
   const toolkitRef = useRef<RadixDappToolkitType | null>(null);
-  // Refs mirror auth/primary state for the walletData$ subscription — the
-  // subscription outlives every render, so closures over state go stale.
+  // Refs mirror state for the toolkit callbacks, which outlive every render.
   const authAddressRef = useRef<string | null>(null);
-  const prevPrimaryRef = useRef<string | null>(null);
+  const sharedRef = useRef<string[]>([]);
+  // decideSession runs only once BOTH sides have reported: the server
+  // (/api/auth/me, or a verified connect) and the toolkit (its first
+  // walletData$ emission, restored from storage). Deciding earlier would sign
+  // out a valid session just because the other side had not loaded yet.
+  const serverKnownRef = useRef(false);
+  const walletKnownRef = useRef(false);
 
   const applyAuth = useCallback((address: string | null) => {
     authAddressRef.current = address;
@@ -117,13 +107,27 @@ export function RadixProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async (): Promise<void> => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } catch {
-      // Local state clears regardless; the cookie is HttpOnly and expires.
-    }
+    const hadSession = authAddressRef.current !== null;
     applyAuth(null);
+    // Never leave the button showing an account the server no longer backs.
+    if (sharedRef.current.length > 0) toolkitRef.current?.disconnect();
+    if (hadSession) {
+      try {
+        await fetch("/api/auth/logout", { method: "POST" });
+      } catch {
+        // Local state is already clear; the cookie is HttpOnly and expires.
+      }
+    }
   }, [applyAuth]);
+
+  const reconcile = useCallback(() => {
+    const decision = decideSession(
+      sharedRef.current,
+      authAddressRef.current,
+      serverKnownRef.current && walletKnownRef.current,
+    );
+    if (decision === "sign-out") void signOut();
+  }, [signOut]);
 
   useEffect(() => {
     const hasExtension =
@@ -132,15 +136,28 @@ export function RadixProvider({ children }: { children: ReactNode }) {
 
     setExtensionDetected(hasExtension);
 
-    // Hydrate an existing session (cookie) so refreshes stay signed in.
+    // Hydrate an existing session (cookie) so refreshes stay signed in. Only a
+    // definitive answer counts: 200 (a session) or 401 (none). A network error
+    // or 5xx leaves the session unknown rather than signing anyone out.
     fetch("/api/auth/me")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { address?: string | null } | null) => {
-        if (data?.address) applyAuth(data.address);
+      .then(async (res) => {
+        if (serverKnownRef.current) return; // a connect already verified meanwhile
+        if (res.ok) {
+          const data = (await res.json()) as { address?: string | null };
+          applyAuth(data.address ?? null);
+          serverKnownRef.current = true;
+        } else if (res.status === 401) {
+          serverKnownRef.current = true;
+        }
+        reconcile();
       })
       .catch(() => {});
 
+    let destroyed = false;
+    let cleanup: (() => void) | undefined;
+
     import("@radixdlt/radix-dapp-toolkit").then(({ RadixDappToolkit, DataRequestBuilder }) => {
+      if (destroyed) return;
       const toolkit = RadixDappToolkit({
         networkId: NETWORK_ID,
         dAppDefinitionAddress: DAPP_DEFINITION_ADDRESS,
@@ -156,30 +173,52 @@ export function RadixProvider({ children }: { children: ReactNode }) {
         return challenge;
       });
 
+      // The √ Connect button's request: one account, with proof of ownership.
+      // One account because a session is bound to one ROLA-proven account; the
+      // button's "update sharing" switches it, with a fresh proof.
       toolkit.walletApi.setRequestData(
-        DataRequestBuilder.accounts().atLeast(1)
+        DataRequestBuilder.accounts().exactly(1).withProof()
       );
 
-      const subscription = toolkit.walletApi.walletData$.subscribe((walletData) => {
-        const next = walletData?.accounts ?? [];
-        setAccounts(next);
-
-        // Session guard (see decideSession).
-        const shared = next.map((a) => a.address);
-        const decision = decideSession(shared, authAddressRef.current, prevPrimaryRef.current);
-        prevPrimaryRef.current = shared[0] ?? null;
-        if (decision === "drop" && authAddressRef.current) {
-          void signOut();
-        }
+      // Every data response (connect, update sharing) is verified on the
+      // server before the toolkit accepts it. Throwing rejects the login.
+      toolkit.walletApi.dataRequestControl(async (walletData) => {
+        const proof = walletData.proofs.find((p) => p.type === "account");
+        if (!proof) throw new Error("No account proof in the wallet response");
+        const res = await fetch("/api/auth/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signedChallenge: proof }),
+        });
+        if (!res.ok) throw new Error(`Sign-in verification failed (HTTP ${res.status})`);
+        const { address } = (await res.json()) as { address: string };
+        applyAuth(address);
+        serverKnownRef.current = true;
       });
 
+      // Set before subscribing: walletData$ can emit the restored state
+      // synchronously inside subscribe(), and a sign-out decided there must be
+      // able to disconnect this toolkit.
       toolkitRef.current = toolkit;
+      const subscription = toolkit.walletApi.walletData$.subscribe((walletData) => {
+        const next = walletData?.accounts ?? [];
+        sharedRef.current = next.map((a) => a.address);
+        walletKnownRef.current = true;
+        setAccounts(next);
+        reconcile();
+      });
 
-      return () => {
+      cleanup = () => {
         subscription.unsubscribe();
         toolkit.destroy();
+        toolkitRef.current = null;
       };
     });
+
+    return () => {
+      destroyed = true;
+      cleanup?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -191,46 +230,10 @@ export function RadixProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const signIn = useCallback(async (): Promise<boolean> => {
-    const toolkit = toolkitRef.current;
-    if (!toolkit) return false;
-
-    const { DataRequestBuilder } = await import("@radixdlt/radix-dapp-toolkit");
-    const result = await toolkit.walletApi.sendOneTimeRequest(
-      DataRequestBuilder.accounts().exactly(1).withProof(),
-    );
-    if (result.isErr()) {
-      console.error("[auth] wallet rejected the sign-in request", result.error);
-      return false;
-    }
-    // RDT 2.x surfaces proofs at the top level; an account request with
-    // .withProof() yields proofs[0].type === "account" in rola's shape.
-    const proof = result.value.proofs?.[0] as SignedChallenge | undefined;
-    if (!proof || proof.type !== "account") return false;
-
-    const res = await fetch("/api/auth/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ signedChallenge: proof }),
-    });
-    if (!res.ok) {
-      console.error("[auth] verify failed", res.status);
-      return false;
-    }
-    const { address } = (await res.json()) as { address: string };
-    applyAuth(address);
-    return true;
-  }, [applyAuth]);
-
-  const ensureSession = useCallback(async (): Promise<boolean> => {
-    if (authAddressRef.current) return true;
-    return signIn();
-  }, [signIn]);
-
-  const sessionMismatch =
-    authAddress !== null &&
-    accounts.length > 0 &&
-    !accounts.some((a) => a.address === authAddress);
+  const ensureSession = useCallback(
+    async (): Promise<boolean> => authAddressRef.current !== null,
+    [],
+  );
 
   const value: WalletContextValue = {
     connected: accounts.length > 0,
@@ -239,8 +242,6 @@ export function RadixProvider({ children }: { children: ReactNode }) {
     extensionDetected,
     authed: authAddress !== null,
     authAddress,
-    sessionMismatch,
-    signIn,
     ensureSession,
     signOut,
   };

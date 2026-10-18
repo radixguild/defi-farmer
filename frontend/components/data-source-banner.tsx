@@ -20,13 +20,21 @@ interface DataSourceBannerProps {
  *   - stale-live    : last fetch failed; data shown is real but cached.
  *   - mock-degraded : API unreachable AND we have no cached real data.
  *   - mock-forced   : NEXT_PUBLIC_USE_MOCKS=true (dev / storybook).
+ *   - unavailable   : an account read failed; nothing is shown in its place.
+ *
+ * "signed-out" renders nothing here: the page shows its own sign-in prompt.
  */
 export function DataSourceBanner({ source, message, className }: DataSourceBannerProps) {
-  if (source === "live" || source === "loading") return null;
+  if (source === "live" || source === "loading" || source === "signed-out") return null;
 
   let headline: string;
   let detail: string;
-  if (source === "stale-live") {
+  if (source === "unavailable") {
+    headline = "Unavailable right now";
+    detail =
+      message ??
+      "Your account data could not be loaded. Nothing is shown in its place; try again shortly.";
+  } else if (source === "stale-live") {
     headline = "Numbers may be stale — live API unreachable";
     detail =
       message ??
@@ -37,6 +45,10 @@ export function DataSourceBanner({ source, message, className }: DataSourceBanne
       message ??
       "Live numbers, balances, and APYs are NOT available right now. Do NOT sign any deposit, withdraw, or harvest action while this banner is visible.";
   } else {
+    // Exhaustive: a new DataSource must choose its own copy, never inherit
+    // the development-mode banner by falling through.
+    const forced: "mock-forced" = source;
+    void forced;
     headline = "Sample data (development mode)";
     detail = "NEXT_PUBLIC_USE_MOCKS=true. Real wallet actions are disabled.";
   }

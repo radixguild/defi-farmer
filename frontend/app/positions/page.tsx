@@ -9,8 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { HealthDot } from "@/components/health-dot";
 import { SparklineChart } from "@/components/sparkline-chart";
-import { ConnectWalletButton } from "@/components/connect-wallet-button";
-import { SignInButton } from "@/components/sign-in-button";
 import { DataSourceBanner } from "@/components/data-source-banner";
 import { DexPreviewModal } from "@/components/dex-preview-modal";
 import { ClaimsSection } from "@/components/claims-section";
@@ -366,15 +364,16 @@ export default function PositionsPage() {
     refetch: refetchPositions,
   } = usePositions();
   // Ledger truth for the signed-in account — includes stake/LP this app never
-  // recorded. Fetch only once authed; the endpoint is session-tier.
+  // recorded. Account reads (useAccountFetch): nothing is requested until a
+  // wallet is signed in, and nothing but that wallet's own rows is shown.
   const { data: holdings, dataSource: holdingsSource, refetch: refetchHoldings } =
-    useHoldings(connected && authed);
-  // The unbonding queue. Same gate as holdings: session-tier, no mock fallback.
+    useHoldings();
+  // The unbonding queue. Same rules as holdings: session-tier, no mock fallback.
   const {
     data: claimsResult,
     dataSource: claimsSource,
     refetch: refetchClaims,
-  } = useStakeClaims(connected && authed);
+  } = useStakeClaims();
   const {
     data: rotations,
     isLoading: rotLoading,
@@ -489,34 +488,22 @@ export default function PositionsPage() {
 
   const isLoading = posLoading || rotLoading;
 
-  if (!connected) {
+  // Positions are session-scoped on the server (D4): without a ROLA-verified
+  // connect the API answers 401 and there is nothing to show. "signed-out" also
+  // covers a session the server no longer holds (useAccountFetch drops it).
+  // Connecting through the √ Connect button at the top of the page IS the
+  // sign-in, so the prompt points there rather than offering a second button.
+  if (!connected || !authed || posSource === "signed-out") {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6 gap-6">
         <div className="text-center space-y-2">
           <h1 className="text-2xl font-bold">Your Positions</h1>
-          <p className="text-muted-foreground">
-            Connect your wallet to view and manage your positions.
-          </p>
-        </div>
-        <ConnectWalletButton />
-    </main>
-    );
-  }
-
-  // Positions are session-scoped on the server (D4): without a ROLA sign-in
-  // the API returns 401 and this page would show sample data. Prompt for the
-  // one-time signature instead.
-  if (!authed) {
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-6 gap-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-2xl font-bold">Sign in to view your positions</h1>
           <p className="text-muted-foreground max-w-md">
-            Prove ownership of your connected account with a one-time wallet
-            signature. Your positions are private to your account.
+            Sign in with your Radix Wallet to see your positions: use the Connect
+            button at the top of the page. Connecting proves you own the account
+            you share, and you see that account&apos;s positions and nothing else.
           </p>
         </div>
-        <SignInButton />
       </main>
     );
   }
@@ -535,10 +522,13 @@ export default function PositionsPage() {
   }
 
   const allPositions = positions ?? [];
-  // Rotations are operator-tier, so a non-operator session gets 401 and
-  // useFetch falls back to the mock — fabricated pools and amounts with IDs
-  // that could collide with real rotation_log rows. Only ever render the
-  // fetch's own live data; the positions dataSource says nothing about this.
+  // A failed read is not "no positions": say it is unavailable and show no
+  // totals rather than a confident zero.
+  const positionsUnavailable = posSource === "unavailable";
+  // Rotation proposals are scoped to the session's own account on the server.
+  // Only ever render the fetch's own live data (in development mode the hook
+  // returns sample rows whose IDs could collide with real rotation_log rows);
+  // the positions dataSource says nothing about this.
   const allRotations = rotSource === "live" ? (rotations ?? []) : [];
 
   const totalValue = allPositions.reduce((sum, p) => sum + p.current_value_xrd, 0);
@@ -552,8 +542,8 @@ export default function PositionsPage() {
   // cookie and no longer injects an operator Bearer (F10/F14/F17). Withdraw
   // builds a real-DEX manifest via the PUBLIC /api/dex/build (Gateway
   // dry-run-gated) and the user signs it in their wallet; rotation
-  // approve/reject are operator-tier and require a session whose account is in
-  // OPERATOR_ADDRESSES.
+  // approve/reject are operator-tier and act only on rows that carry the
+  // session's own account.
   //
   // Every state-changing handler refuses unless `posSource === "live"`. Mock
   // data has fake position/rotation IDs that would either 404 or, worse,
@@ -577,11 +567,9 @@ export default function PositionsPage() {
   // is false: this app's whole claim is that its labels mean what they say.
   // The sections themselves only render on their own live data.
   const ledgerActionsDisabled = !connected || !authed || !accounts[0]?.address || !sendTransaction;
-  const ledgerActionsDisabledReason = !connected
+  const ledgerActionsDisabledReason = !connected || !authed
     ? "Connect your wallet to exit a position."
-    : !authed
-      ? "Sign in with your wallet to exit a position."
-      : "No account available to sign with.";
+    : "No account available to sign with.";
 
   // Exit — non-custodial: the server resolves the pool's blueprint and builds
   // the right withdraw (NFT receipt id vs fungible LP amount), Gateway-dry-run
@@ -697,17 +685,23 @@ export default function PositionsPage() {
         <div className="flex gap-6 md:ml-auto">
           <div className="text-center">
             <p className="text-sm text-muted-foreground">Total Value</p>
-            <p className="text-lg font-bold">{formatXrd(totalValue)} XRD</p>
-          </div>
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground">Total P&L</p>
-            <p className={`text-lg font-bold ${totalPnl >= 0 ? "text-profit-green" : "text-loss-red"}`}>
-              {totalPnl >= 0 ? "+" : ""}{formatXrd(totalPnl)} XRD
+            <p className="text-lg font-bold">
+              {positionsUnavailable ? "—" : `${formatXrd(totalValue)} XRD`}
             </p>
           </div>
           <div className="text-center">
+            <p className="text-sm text-muted-foreground">Total P&L</p>
+            {positionsUnavailable ? (
+              <p className="text-lg font-bold">—</p>
+            ) : (
+              <p className={`text-lg font-bold ${totalPnl >= 0 ? "text-profit-green" : "text-loss-red"}`}>
+                {totalPnl >= 0 ? "+" : ""}{formatXrd(totalPnl)} XRD
+              </p>
+            )}
+          </div>
+          <div className="text-center">
             <p className="text-sm text-muted-foreground">Positions</p>
-            <p className="text-lg font-bold">{allPositions.length}</p>
+            <p className="text-lg font-bold">{positionsUnavailable ? "—" : allPositions.length}</p>
           </div>
         </div>
       </div>
@@ -759,7 +753,17 @@ export default function PositionsPage() {
       )}
 
       {/* Position Cards */}
-      {allPositions.length === 0 && (
+      {positionsUnavailable && (
+        <Card>
+          <CardContent className="py-10 text-center space-y-1">
+            <p className="font-medium">Your tracked positions are unavailable right now</p>
+            <p className="text-sm text-muted-foreground">
+              Nothing is shown in their place. Try again shortly.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+      {!positionsUnavailable && allPositions.length === 0 && (
         <Card>
           <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
             <div className="space-y-1">

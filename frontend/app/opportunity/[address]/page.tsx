@@ -18,7 +18,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RiskMeter } from "@/components/risk-meter";
-import { ConnectWalletButton } from "@/components/connect-wallet-button";
 import { DataSourceBanner } from "@/components/data-source-banner";
 import { DexPreviewModal } from "@/components/dex-preview-modal";
 import { RangeSelector } from "@/components/range-selector";
@@ -310,7 +309,7 @@ export default function OpportunityDetailPage() {
     const authed = await ensureSession();
     if (!authed) {
       setRecordNote(
-        "Deposit submitted. Sign in (left nav) to track it in your portfolio — deposit again is NOT needed.",
+        "Deposit submitted. Connect your wallet (the Connect button at the top of the page) to track it in your portfolio — deposit again is NOT needed.",
       );
       return;
     }
@@ -698,12 +697,10 @@ export default function OpportunityDetailPage() {
                 Review deposit
               </Button>
             ) : (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground text-center">
-                  Connect your wallet to deposit
-                </p>
-                <ConnectWalletButton className="w-full justify-center" />
-              </div>
+              <p className="text-sm text-muted-foreground text-center">
+                Connect your wallet with the Connect button at the top of the
+                page to deposit.
+              </p>
             )}
           </CardContent>
         </Card>

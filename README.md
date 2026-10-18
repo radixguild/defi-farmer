@@ -6,6 +6,7 @@ transaction manifest **you** sign in your own wallet. The server holds no signin
 vault and no custody. Funds never touch it.
 
 **Status: live, maintained, zero users to date.** The honest version is in [STATE.md](STATE.md).
+Live: https://farmer.radixguild.com
 Licence: Apache-2.0 ([LICENSE](LICENSE)). How this public tree came to be:
 [PROVENANCE.md](PROVENANCE.md).
 

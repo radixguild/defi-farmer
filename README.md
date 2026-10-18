@@ -63,7 +63,9 @@ without running the agent. Sign actions are disabled in that mode.
 Three API tiers. **Public**: market data and the read-only `POST /api/dex/build` sign gate.
 **Session**: a ROLA account proof becomes an HttpOnly `farmer_session` cookie, and a wallet
 sees only its own rows. **Operator**: a Bearer token, or a session whose account is listed
-in `OPERATOR_ADDRESSES`, for agent control and global views. Design and decisions:
+in `OPERATOR_ADDRESSES`, for agent control. No session ever sees past its own account, an
+allowlisted one included: views across accounts (every position, the rotation proposals, the
+watch list) take the Bearer. Design and decisions:
 [docs/PHASE-3.1-DESIGN.md](docs/PHASE-3.1-DESIGN.md).
 
 ## Running it in production

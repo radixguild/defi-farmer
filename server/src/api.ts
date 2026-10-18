@@ -49,6 +49,9 @@ function json(
 //              whose account is in OPERATOR_ADDRESSES (humans in a browser).
 //              The session route exists so the Next proxy never has to attach
 //              the Bearer on behalf of an unauthenticated caller (F10/F14/F17).
+//              Views of OTHER accounts' rows are Bearer-only: every session,
+//              an allowlisted one included, is pinned to its own account
+//              (readScope below).
 
 function checkAuth(req: Request): Response | null {
   const authHeader = req.headers.get('Authorization');
@@ -97,6 +100,38 @@ function checkTier(tier: Tier, req: Request, session: Session | null): Response 
   // session tier
   if (session || operatorOk) return null;
   return json({ error: 'Authentication required: sign in with your Radix wallet' }, 401);
+}
+
+/// Whose account-scoped rows a request may read or act on. Every wallet login
+/// is pinned to the one account it proved through ROLA, and that includes a
+/// wallet listed in OPERATOR_ADDRESSES: the allowlist grants agent control,
+/// never a view of other accounts. Only the Bearer (machines over loopback;
+/// the Next proxy never attaches it) reads across accounts, and only when no
+/// session cookie has pinned the request first. null = no identity at all
+/// (the tier check has already answered 401 for session-tier routes).
+type ReadScope = { kind: 'account'; address: string } | { kind: 'all' };
+
+function readScope(req: Request, session: Session | null): ReadScope | null {
+  if (session) return { kind: 'account', address: session.user_address };
+  if (checkAuth(req) === null) return { kind: 'all' };
+  return null;
+}
+
+/// The account a holdings-style read targets: the session's own, or (Bearer
+/// only) any account named by ?address=. A Response is the refusal to return.
+function holdingsAccount(url: URL, scope: ReadScope | null, what: string, corsOrigin: string): string | Response {
+  const requested = url.searchParams.get('address');
+  if (requested !== null && !isAccountAddress(requested)) {
+    return json({ error: 'Invalid account address' }, 400, corsOrigin);
+  }
+  if (scope?.kind === 'account') {
+    if (requested !== null && requested !== scope.address) {
+      return json({ error: `Forbidden: you can only read your own ${what}` }, 403, corsOrigin);
+    }
+    return scope.address;
+  }
+  if (scope?.kind === 'all' && requested !== null) return requested;
+  return json({ error: 'No account: sign in, or pass ?address= with the operator token' }, 400, corsOrigin);
 }
 
 function sessionCookieHeader(token: string, maxAgeSeconds: number): string {
@@ -224,16 +259,41 @@ function matchRoute(route: Route, method: string, path: string): string[] | null
   return m ? m.slice(1) : null;
 }
 
-// --- Rotation approve/reject helper ---
+// --- Rotation helpers ---
+
+/// Rotation proposals visible to `scope`: every row for the Bearer, only the
+/// session account's rows for a wallet session (never the owner-less ones).
+function rotationRows(scope: ReadScope | null, pendingOnly: boolean): unknown[] {
+  const where: string[] = [];
+  const args: string[] = [];
+  if (pendingOnly) where.push("status = 'proposed'");
+  if (scope?.kind !== 'all') {
+    where.push('user_address = ?');
+    args.push(scope?.address ?? '');
+  }
+  return getDb()
+    .prepare(`
+      SELECT id, from_pool, to_pool, from_protocol, to_protocol,
+        CAST(amount AS REAL) AS amount_xrd,
+        reason, status, proposed_at
+      FROM rotation_log ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY proposed_at DESC${pendingOnly ? '' : ' LIMIT 100'}
+    `)
+    .all(...args);
+}
 
 function handleRotationStatusChange(
-  id: number, newStatus: 'approved' | 'rejected', corsOrigin: string,
+  id: number, newStatus: 'approved' | 'rejected', corsOrigin: string, scope: ReadScope | null,
 ): Response {
   if (isNaN(id) || id <= 0) {
     return json({ error: 'Bad Request: rotation id must be a positive integer' }, 400, corsOrigin);
   }
   const db = getDb();
-  const row = db.prepare('SELECT * FROM rotation_log WHERE id = ?').get(id) as
+  // A wallet session acts only on its own account's proposals; another
+  // account's row (or an account-wide one) answers exactly like a missing id.
+  const row = (scope?.kind === 'account'
+    ? db.prepare('SELECT * FROM rotation_log WHERE id = ? AND user_address = ?').get(id, scope.address)
+    : db.prepare('SELECT * FROM rotation_log WHERE id = ?').get(id)) as
     | { status: string }
     | undefined;
   if (!row) return json({ error: 'Rotation not found' }, 404, corsOrigin);
@@ -316,7 +376,7 @@ const routes: Route[] = [
   {
     // Session tier (D4): a signed-in wallet sees ONLY its rows; the operator
     // Bearer (no session cookie) sees everything, incl. the agent's own
-    // NULL-owner rows — the pre-3.1 dashboard behavior.
+    // NULL-owner rows — the pre-3.1 dashboard behavior. See readScope().
     method: 'GET', pattern: '/api/positions', tier: 'session',
     handler: ({ corsOrigin, session }) => {
       const db = getDb();
@@ -436,9 +496,10 @@ const routes: Route[] = [
         positionId: id,
         intentHash: b.intent_hash,
         userAddress: session?.user_address ?? null,
-        // The Bearer (or an allowlisted operator wallet) may close any row;
-        // verification still runs against the ROW's owner account.
-        isOperator: checkAuth(req) === null || isOperatorSession(session),
+        // Only the Bearer may close another account's row; a wallet session,
+        // an allowlisted one included, closes its own (see readScope).
+        // Verification still runs against the ROW's owner account.
+        isOperator: readScope(req, session)?.kind === 'all',
       });
       if (!result.ok) return json({ error: result.error }, result.status, corsOrigin);
       return json({ ok: true, alreadyClosed: result.alreadyClosed, position: result.position }, 200, corsOrigin);
@@ -448,26 +509,11 @@ const routes: Route[] = [
     // What the ledger says the account holds, classified — the read that the
     // recorded-positions table cannot provide (it only knows deposits made
     // through this app). Session tier: your own account only; the operator
-    // may pass ?address= for any account.
+    // Bearer may pass ?address= for any account (see readScope).
     method: 'GET', pattern: '/api/holdings', tier: 'session',
     handler: async ({ url, req, corsOrigin, session }) => {
-      const operatorOk = checkAuth(req) === null || isOperatorSession(session);
-      const requested = url.searchParams.get('address');
-      let account: string | null = null;
-      if (requested) {
-        if (!isAccountAddress(requested)) {
-          return json({ error: 'Invalid account address' }, 400, corsOrigin);
-        }
-        if (!operatorOk && requested !== session?.user_address) {
-          return json({ error: 'Forbidden: you can only read your own holdings' }, 403, corsOrigin);
-        }
-        account = requested;
-      } else {
-        account = session?.user_address ?? null;
-      }
-      if (!account) {
-        return json({ error: 'No account: sign in, or pass ?address= with operator credentials' }, 400, corsOrigin);
-      }
+      const account = holdingsAccount(url, readScope(req, session), 'holdings', corsOrigin);
+      if (account instanceof Response) return account;
       try {
         return json(await readHoldings(new GatewayClient(), account), 200, corsOrigin);
       } catch (err) {
@@ -481,27 +527,12 @@ const routes: Route[] = [
     // much each is worth and how long it has left. Without this the claim leg of
     // an unstake is unreachable: a Stake Claim is spent by local id, and nothing
     // else in the app can tell a user what theirs are. Same ownership rules as
-    // /api/holdings — your own account, or any account with operator creds.
+    // /api/holdings — your own account, or any account with the operator Bearer.
     // Read-only ledger data; builds and signs nothing.
     method: 'GET', pattern: '/api/holdings/claims', tier: 'session',
     handler: async ({ url, req, corsOrigin, session }) => {
-      const operatorOk = checkAuth(req) === null || isOperatorSession(session);
-      const requested = url.searchParams.get('address');
-      let account: string | null = null;
-      if (requested) {
-        if (!isAccountAddress(requested)) {
-          return json({ error: 'Invalid account address' }, 400, corsOrigin);
-        }
-        if (!operatorOk && requested !== session?.user_address) {
-          return json({ error: 'Forbidden: you can only read your own claims' }, 403, corsOrigin);
-        }
-        account = requested;
-      } else {
-        account = session?.user_address ?? null;
-      }
-      if (!account) {
-        return json({ error: 'No account: sign in, or pass ?address= with operator credentials' }, 400, corsOrigin);
-      }
+      const account = holdingsAccount(url, readScope(req, session), 'claims', corsOrigin);
+      if (account instanceof Response) return account;
       try {
         const claims = await readStakeClaims(new GatewayClient(), account);
         return json({ account, claims }, 200, corsOrigin);
@@ -514,8 +545,13 @@ const routes: Route[] = [
   {
     // The operator's watch list (accounts that never ROLA-sign in from a
     // browser, e.g. one whose key lives on a server). Config-driven, read-only.
+    // Other accounts' holdings: Bearer only. An allowlisted wallet session
+    // passes the operator tier but is still pinned to its own account.
     method: 'GET', pattern: '/api/holdings/watched', tier: 'operator',
-    handler: async ({ corsOrigin }) => {
+    handler: async ({ req, corsOrigin, session }) => {
+      if (readScope(req, session)?.kind !== 'all') {
+        return json({ error: 'Forbidden: a wallet session reads only its own account' }, 403, corsOrigin);
+      }
       const gateway = new GatewayClient();
       const results = await Promise.all(
         CONFIG.WATCH_ADDRESSES.map(async (account) => {
@@ -632,35 +668,19 @@ const routes: Route[] = [
     },
   },
   {
-    // Operator tier: rotation history is bot-portfolio telemetry (D3).
-    method: 'GET', pattern: '/api/rotation/log', tier: 'operator',
-    handler: ({ corsOrigin }) => {
-      const db = getDb();
-      const rows = db
-        .prepare(`
-          SELECT id, from_pool, to_pool, from_protocol, to_protocol,
-            CAST(amount AS REAL) AS amount_xrd,
-            reason, status, proposed_at
-          FROM rotation_log ORDER BY proposed_at DESC LIMIT 100
-        `)
-        .all();
-      return json(rows, 200, corsOrigin);
-    },
+    // Session tier, scoped like /api/positions (see readScope). The agent's
+    // weekly review sizes its proposals from EVERY account's active positions
+    // and stores them with no owner, so they are account-wide data: the Bearer
+    // sees them all, a wallet session sees only rows that carry its own
+    // account — none today, so a session gets [] rather than a 401.
+    method: 'GET', pattern: '/api/rotation/log', tier: 'session',
+    handler: ({ req, corsOrigin, session }) =>
+      json(rotationRows(readScope(req, session), false), 200, corsOrigin),
   },
   {
-    method: 'GET', pattern: '/api/rotation/pending', tier: 'operator',
-    handler: ({ corsOrigin }) => {
-      const db = getDb();
-      const rows = db
-        .prepare(`
-          SELECT id, from_pool, to_pool, from_protocol, to_protocol,
-            CAST(amount AS REAL) AS amount_xrd,
-            reason, status, proposed_at
-          FROM rotation_log WHERE status = 'proposed' ORDER BY proposed_at DESC
-        `)
-        .all();
-      return json(rows, 200, corsOrigin);
-    },
+    method: 'GET', pattern: '/api/rotation/pending', tier: 'session',
+    handler: ({ req, corsOrigin, session }) =>
+      json(rotationRows(readScope(req, session), true), 200, corsOrigin),
   },
   {
     // Operator tier (F17): thresholds/caps/gateway are a recon map once the
@@ -701,13 +721,13 @@ const routes: Route[] = [
   },
   {
     method: 'POST', pattern: /^\/api\/rotation\/(\d+)\/approve$/,
-    handler: ({ corsOrigin }, [id]) =>
-      handleRotationStatusChange(parseInt(id, 10), 'approved', corsOrigin),
+    handler: ({ req, corsOrigin, session }, [id]) =>
+      handleRotationStatusChange(parseInt(id, 10), 'approved', corsOrigin, readScope(req, session)),
   },
   {
     method: 'POST', pattern: /^\/api\/rotation\/(\d+)\/reject$/,
-    handler: ({ corsOrigin }, [id]) =>
-      handleRotationStatusChange(parseInt(id, 10), 'rejected', corsOrigin),
+    handler: ({ req, corsOrigin, session }, [id]) =>
+      handleRotationStatusChange(parseInt(id, 10), 'rejected', corsOrigin, readScope(req, session)),
   },
 ];
 

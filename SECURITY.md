@@ -35,11 +35,11 @@ wallet — specifically:
 
 **Do not open a public GitHub issue, and do not describe the finding in a commit
 message, PR description, or anywhere else visible outside a private channel.** Use
-GitHub's private vulnerability-reporting flow on this repository (Security tab →
-Report a vulnerability) if it is enabled for you, or reach the maintainer (@bigdevxrd)
-through whatever private channel you already have. If neither is available to you, a
-GitHub issue that asks only for a private contact method — with no detail about the
-finding itself — is a fine way to start that conversation.
+GitHub's private vulnerability reporting on this repository:
+<https://github.com/radixguild/defi-farmer/security/advisories/new> (the same form as
+Security tab → Report a vulnerability). The report stays private between you and the
+maintainer. If you already have a private channel to the maintainer (@bigdevxrd), that
+works too.
 
 Include what you found, the affected file(s) or endpoint, and, if you have one, a
 reproduction. A local or Stokenet repro is strongly preferred over anything

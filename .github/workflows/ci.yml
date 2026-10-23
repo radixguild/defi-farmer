@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege: every job here only reads the repository. A job that ever
+# needs more grants it on that job, not here.
+permissions:
+  contents: read
+
 jobs:
   frontend:
     name: Frontend (typecheck + Next build)

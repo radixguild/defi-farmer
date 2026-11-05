@@ -168,6 +168,31 @@ Rules that are money-wrong if ignored:
 6. **A zero-amount exit previews `Succeeded`.** It is a valid no-op that costs a network
    fee and moves nothing — the same "preview cannot catch valid-but-wrong" family as the
    tick/bin trap, so the builders reject zero themselves.
+7. **LSULP's third argument is an optional credit-receipt proof, and `None` is valid.**
+   Verified 2026-11-05 (UTC). The LsuPool 1.0.0 blueprint schema was read from the Gateway
+   (`package_rdx1pkfrtmv…`, schema `e4f8f277…`, state version 567581795), and paired
+   `/transaction/preview` runs followed at epoch 355865 (no signature, nothing submitted).
+   The schema gives `remove_liquidity(liquidity_tokens: Bucket, lsu_resource: ResourceAddress,
+   credit_proof: Option<Proof>)` and `add_liquidity(bucket: Bucket, credit_proof: Option<Proof>)`.
+   The proof is of the pool's credit-receipt NFT (LSUCR, the component's
+   `credit_receipt_resource_manager`, `resource_rdx1nt3frmqu…`). Its data is a single field,
+   `resources: Map<ResourceAddress, Decimal>`, which holds a credit in LSU units per LSU
+   resource. The previews ran from an account holding LSULP and one LSUCR, sending the same
+   manifest with `None` and with `Some(proof)`:
+   - **Target LSU in the receipt, amount within its credit** (500 LSULP, credit 1000). `None`
+     paid the pool's fees, so the user received 496.378 LSU. `Some(proof)` paid none, so the
+     user received 496.726 LSU, 0.07% more. That matches the component's `liquidity_fee` 0.0005
+     + `protocol_fee` 0.0001 + `reserve_fee` 0.0001 read from state. The receipt's credit
+     for that LSU fell from 1000 to 503.274 (1000 − 496.726), so the credit is spent.
+   - **Amount beyond the credit** (3000 LSULP, credit 1000). The waiver covered only the
+     credited part: fees were charged on the remaining ~2000.
+   - **Target LSU not in the receipt.** The outputs were identical with and without the proof.
+
+   So passing `None` is **conservative, not wrong**. It always type-checks and previews
+   `Succeeded`, but a holder who exits to an LSU their receipt credits pays the fee a proof
+   would have waived (at most 0.07% of the credited amount). The builder passes `None` on
+   both legs. A deposit therefore mints a fresh LSUCR each time instead of adding credit to
+   an existing one. The previews did not exercise `add_liquidity` with `Some(proof)`.
 
 Exit dry-runs on mainnet 2026-08-13 (`/transaction/preview`, no signature, nothing
 submitted): unstake 100 LSU → 1 claim NFT; Weft 100 w2-XRD → 104.718 XRD; LSULP 1000 →

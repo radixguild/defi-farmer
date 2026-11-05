@@ -223,8 +223,10 @@ export function buildLsulpWithdraw(
     ...optionalLockFee(account, opts.lockFee),
     rtm.withdraw(account, LSULP_RESOURCE, amount),
     rtm.takeAll(LSULP_RESOURCE, 'bucket_lsulp'),
-    // Enum<0u8>() = None. Every observed real exit passes None here; the
-    // credit-receipt (LSUCR) discount path is NOT verified against mainnet.
+    // Enum<0u8>() = None for credit_proof: Option<Proof> (schema-verified 2026-11-05).
+    // None is valid; Some(LSUCR proof) would waive the 0.07% pool fee on the
+    // credited amount for this LSU, which this builder does not use. See
+    // docs/DEX-INTEGRATION.md, single-sided venues, rule 7.
     `CALL_METHOD Address("${assertAddress(LSU_POOL_COMPONENT, 'lsu_pool')}") "remove_liquidity" Bucket("bucket_lsulp") Address("${targetLsuResource}") Enum<0u8>();`,
   ];
   if (unstakeValidator !== undefined) {

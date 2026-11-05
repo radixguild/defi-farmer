@@ -42,8 +42,11 @@ Why it paused:
 
 ## Known gaps
 
-- The CaviarNine LSU-pool credit-receipt (LSUCR) discount path is unverified against
-  mainnet; exits pass `None`.
+- CaviarNine LSU-pool exits pass `None` for the credit-receipt (LSUCR) proof. A schema read
+  and mainnet previews on 2026-11-05 confirmed that `None` is valid. Passing the receipt's
+  proof would waive the pool's 0.07% fee on the credited amount for that LSU, and the
+  builder does not do this (see [docs/DEX-INTEGRATION.md](docs/DEX-INTEGRATION.md), rule 7
+  under single-sided venues).
 - [docs/SNAPSHOT-CADENCE-PLAN.md](docs/SNAPSHOT-CADENCE-PLAN.md) phases 4 and 5 (index
   re-measure, one-off `VACUUM`) are open.
 - Comments that cite `REVIEW-2026-07-17 Fnn` refer to an internal 2026-07-17 security review

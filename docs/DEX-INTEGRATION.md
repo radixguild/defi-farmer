@@ -188,11 +188,12 @@ Rules that are money-wrong if ignored:
      credited part: fees were charged on the remaining ~2000.
    - **Target LSU not in the receipt.** The outputs were identical with and without the proof.
 
-   So passing `None` is **conservative, not wrong**. It always type-checks and previews
-   `Succeeded`, but a holder who exits to an LSU their receipt credits pays the fee a proof
-   would have waived (at most 0.07% of the credited amount). The builder passes `None` on
-   both legs. A deposit therefore mints a fresh LSUCR each time instead of adding credit to
-   an existing one. The previews did not exercise `add_liquidity` with `Some(proof)`.
+   So passing `None` is **conservative, not wrong**. It matches the schema, and every
+   preview with `None` run on 2026-11-05 returned `Succeeded`. But a holder who exits to an
+   LSU their receipt credits pays the fee a proof would have waived (at most 0.07% of the
+   credited amount). The builder passes `None` on both legs. These previews did not exercise
+   `add_liquidity` at all, so what a deposit with `None` or `Some(proof)` does with the
+   receipt is unknown.
 
 Exit dry-runs on mainnet 2026-08-13 (`/transaction/preview`, no signature, nothing
 submitted): unstake 100 LSU → 1 claim NFT; Weft 100 w2-XRD → 104.718 XRD; LSULP 1000 →

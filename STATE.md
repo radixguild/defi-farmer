@@ -1,6 +1,6 @@
 # State
 
-_Updated 2026-10-18. This is the project's public status page. It changes when the facts
+_Updated 2026-11-06. This is the project's public status page. It changes when the facts
 change, not on a schedule._
 
 ## Deployed
@@ -8,7 +8,8 @@ change, not on a schedule._
 Live at https://farmer.radixguild.com since 2026-10-18, a non-custodial advisor on Radix
 mainnet (first deployed in August 2026). The move to a radixguild.com subdomain, dropped on
 2026-10-11, was re-ruled on 2026-10-18. The earlier address,
-`farmer.156-67-219-105.sslip.io`, remains as an alias that will redirect. It reads public
+`farmer.156-67-219-105.sslip.io`, redirects: on 2026-11-05 (UTC) it answered `301` to the
+same path on `https://farmer.radixguild.com`. It reads public
 ledger and DEX state, scores it, and builds manifests for the connected wallet to review and
 sign. There is no server-side key and no custody (see the [README](README.md)). The deploy
 tooling behind it is not part of this repository.
@@ -37,8 +38,10 @@ Why it paused:
   are a spec. The platform-fee splice exists in code but is off by default and fails safe
   when misconfigured; the gift page (`/gift`) stays dark unless a destination is configured
   and validates (`frontend/lib/gift`).
-- **Radix mainnet halted on 2026-08-31 and resumed on 2026-09-11.** The advisor ran through
-  the halt with nothing current to score.
+- **Radix mainnet halted on 2026-08-31 and resumed on 2026-09-11.** The Gateway's
+  transaction stream shows no committed transaction between state version 557840627
+  (2026-08-31 21:19 UTC) and 557840628 (2026-09-11 11:35 UTC). The advisor ran through the
+  halt with nothing current to score.
 
 ## Known gaps
 

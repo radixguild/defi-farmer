@@ -19,7 +19,7 @@ import {
   cavBinRangeByWidth, cavBinRangeByPrice,
 } from './concentrated.js';
 import { optimizeRange, type RangeChoice } from '../range-optimizer.js';
-import { previewManifest, type PreviewResult } from './preview.js';
+import { previewManifest, refuseLsulpPartFill, type PreviewResult } from './preview.js';
 import { assertAddress, assertAmount } from './rtm.js';
 import { toScaled } from './decimal.js';
 import {
@@ -34,6 +34,7 @@ import {
 } from './venue-exit.js';
 import { getValidatorBoard, type ValidatorRow } from '../validator-board.js';
 import { XRD_STAKING_ADDRESS } from '../staking.js';
+import { LSULP_RESOURCE } from '../lsu-pool.js';
 
 const XRD_RESOURCE =
   'resource_rdx1tknxxxxxxxxxradxrdxxxxxxxxx009923554798xxxxxxxxxradxrd';
@@ -678,21 +679,24 @@ async function buildVenueExitAndPreview(
     const amount = requireUnitAmount(req);
     const exitTo = req.exitTo ?? 'lsu';
     if (exitTo !== 'lsu' && exitTo !== 'xrd') throw new DexBuildError("exitTo must be 'lsu' or 'xrd'");
-    // The pool pays out in a validator LSU the CALLER names, and it must be one
-    // the pool holds enough of. Reusing the deposit's picker keeps entry and exit
-    // pointed at the same (highest-stake, active, paying) validator; if the pool
-    // is short of that LSU the dry-run fails and nothing can be signed.
+    // The pool pays out in a validator LSU the CALLER names. Reusing the deposit's
+    // picker keeps entry and exit pointed at the same (highest-stake, active,
+    // paying) validator. If the pool's main vault is short of that LSU the call
+    // does NOT fail: it part-fills, returns the unfilled LSULP and the dry-run
+    // still Succeeds (docs/design/lsulp-exit-part-fill.md). refuseLsulpPartFill
+    // below is therefore the sign gate for this exit, not `preview.ok` alone.
     const board = await getValidatorBoard(gw);
     const validator = pickLsulpValidator(board.rows);
     if (!validator) throw new DexBuildError('no active validator available to redeem LSULP into');
     const { lsuResource } = await resolveValidatorExitResources(gw, validator.address);
-    return await out(
+    const built = await out(
       buildLsulpWithdraw(
         req.account, amount, lsuResource,
         exitTo === 'xrd' ? validator.address : undefined,
       ),
       exitTo === 'xrd' ? UNSTAKE_NOTICE : LSULP_TO_LSU_NOTICE,
     );
+    return { ...built, preview: refuseLsulpPartFill(built.preview, LSULP_RESOURCE, amount) };
   } catch (err) {
     if (err instanceof DexBuildError) throw err;
     // A named entity that does not resolve on-ledger is caller input (400) — the

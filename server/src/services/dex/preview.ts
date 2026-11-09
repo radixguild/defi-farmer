@@ -69,3 +69,35 @@ function sumXrdFee(fee: Record<string, string>): string {
   }
   return fromScaled(total);
 }
+
+/// Fail-closed fill check for an LSULP exit (CaviarNine LSU pool `remove_liquidity`).
+///
+/// The pool pays out in the one validator LSU the caller names. If its main vault
+/// for that LSU is short, the call does NOT panic: it part-fills and hands the
+/// unfilled LSULP back, and the dry-run still reports `Succeeded`. So `ok` alone
+/// is not a safe sign gate for this exit. The account's NET LSULP movement must
+/// equal exactly `-amount`; anything less means LSULP came back and the exit only
+/// partly happened, so the preview is turned into a refusal. Funds are not at risk
+/// in the part-fill case; the refusal exists so the user is never asked to sign
+/// something that does less than they asked for. A preview that already failed is
+/// returned unchanged.
+export function refuseLsulpPartFill(
+  preview: PreviewResult,
+  lsulpResource: string,
+  amount: string,
+): PreviewResult {
+  if (!preview.ok) return preview;
+  const net = preview.movements.find((m) => m.resource === lsulpResource);
+  const spent = net ? -toScaled(net.amount) : 0n;
+  const requested = toScaled(amount);
+  if (spent >= requested) return preview;
+  const returned = fromScaled(requested - spent);
+  return {
+    ...preview,
+    ok: false,
+    status: 'Refused',
+    error:
+      `The LSU pool cannot fill this exit in full: ${returned} of the ${amount} LSULP would come back to you ` +
+      `unredeemed. Nothing was signed. Try a smaller amount or exit in several parts.`,
+  };
+}

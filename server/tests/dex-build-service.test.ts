@@ -9,7 +9,7 @@ import {
 import type { GatewayClient, GwEntityItem } from '../src/services/gateway';
 import { XRD_STAKING_ADDRESS } from '../src/services/staking';
 import { WEFT_V2_LENDING_COMPONENT } from '../src/services/weft';
-import { LSU_POOL_COMPONENT } from '../src/services/lsu-pool';
+import { LSU_POOL_COMPONENT, LSULP_RESOURCE } from '../src/services/lsu-pool';
 import { _clearBoardCache } from '../src/services/validator-board';
 
 const XRD = 'resource_rdx1tknxxxxxxxxxradxrdxxxxxxxxx009923554798xxxxxxxxxradxrd';
@@ -449,6 +449,10 @@ const lfItems: Record<string, GwEntityItem> = {
   [LF_PLAZA_QUOTE_POOL]: { address: LF_PLAZA_QUOTE_POOL, details: { state: { pool_unit_resource_address: LF_PLAZA_QUOTE_LP } } },
 } as unknown as Record<string, GwEntityItem>;
 
+function lsulpChange(amount: string) {
+  return { resource_address: LSULP_RESOURCE, component_entity: { entity_address: EXIT_ACCOUNT }, amount };
+}
+
 interface LockFeeGw {
   previewed: string[];
 }
@@ -456,7 +460,16 @@ interface LockFeeGw {
 /// One stub for every kind: LP pools resolve from `lfItems`; validators, Weft
 /// and stake claims answer the venue paths. `verdict` decides each preview, so
 /// a test can fail the first build and watch the retry.
-function lockFeeGw(verdict: (manifest: string, n: number) => Record<string, unknown> = () => ({ status: 'Succeeded' })) {
+/// `changes` supplies the preview's resource_changes. The default models a CLEAN
+/// LSULP exit (every LSULP the manifest withdraws is spent), so the exit rows
+/// below still pass the LSULP fill gate; other manifests get no changes.
+function lockFeeGw(
+  verdict: (manifest: string, n: number) => Record<string, unknown> = () => ({ status: 'Succeeded' }),
+  changes: (manifest: string) => unknown[] = (m) => {
+    const w = m.match(new RegExp(`"withdraw" Address\\("${LSULP_RESOURCE}"\\) Decimal\\("([^"]+)"\\)`));
+    return w ? [{ index: 0, resource_changes: [lsulpChange(`-${w[1]}`)] }] : [];
+  },
+) {
   const validatorState = {
     stake_unit_resource_address: EXIT_LSU,
     claim_token_resource_address: EXIT_CLAIM_NFT,
@@ -509,7 +522,7 @@ function lockFeeGw(verdict: (manifest: string, n: number) => Record<string, unkn
     },
     async previewTransaction(manifest: string) {
       gw.previewed.push(manifest);
-      return { receipt: verdict(manifest, gw.previewed.length), resource_changes: [] };
+      return { receipt: verdict(manifest, gw.previewed.length), resource_changes: changes(manifest) };
     },
   };
   return gw as unknown as GatewayClient & LockFeeGw;
@@ -575,5 +588,71 @@ describe('buildAndPreview — no lock_fee on any path', () => {
     expect(r.needsCoLiquidity).toEqual({ otherToken: XWBTC });
     expect(r.manifest).not.toContain('lock_fee');
     for (const m of gw.previewed) expect(m).not.toContain('lock_fee');
+  });
+});
+
+// ── LSULP exit: the sign gate refuses a part-fill ────────────────────────────
+//
+// The pool part-fills when its main vault is short of the named LSU: the dry-run
+// still Succeeds and the unfilled LSULP is returned to the account (mainnet
+// evidence in docs/design/lsulp-exit-part-fill.md). `ok` alone must not sign it.
+
+describe('buildAndPreview — LSULP exit part-fill gate', () => {
+  beforeEach(() => {
+    _clearResolverCache();
+    _clearBoardCache();
+  });
+
+  const exitReq = (extra: Record<string, unknown> = {}) => ({
+    action: 'withdraw' as const, account: EXIT_ACCOUNT, poolAddress: LSU_POOL_COMPONENT, lpAmount: '500', ...extra,
+  });
+  // Net movement as the Gateway reports it: 500 withdrawn, part returned.
+  const partFill = (returned: string) => () => [{
+    index: 0, resource_changes: [lsulpChange('-500'), lsulpChange(returned)],
+  }];
+
+  test('clean preview (all LSULP spent) is allowed', async () => {
+    const r = await buildAndPreview(lockFeeGw(undefined, () => [{ index: 0, resource_changes: [lsulpChange('-500')] }]), exitReq());
+    expect(r.preview.ok).toBe(true);
+    expect(r.preview.status).toBe('Succeeded');
+  });
+
+  test('part-fill (498.0686 of 500 LSULP returned, as observed) is refused with a reason', async () => {
+    const r = await buildAndPreview(lockFeeGw(undefined, partFill('498.0686')), exitReq());
+    expect(r.preview.ok).toBe(false);
+    expect(r.preview.status).toBe('Refused');
+    expect(r.preview.error).toContain('498.0686');
+    expect(r.preview.error).toContain('500 LSULP');
+    expect(r.preview.error!.length).toBeLessThan(280); // the modal truncates at 280
+  });
+
+  test('refused for exitTo=xrd too', async () => {
+    const r = await buildAndPreview(lockFeeGw(undefined, partFill('498.0686')), exitReq({ exitTo: 'xrd' }));
+    expect(r.preview.ok).toBe(false);
+  });
+
+  test('even 1 wei of returned LSULP is refused (fail-closed)', async () => {
+    const r = await buildAndPreview(lockFeeGw(undefined, partFill('0.000000000000000001')), exitReq());
+    expect(r.preview.ok).toBe(false);
+  });
+
+  test('no LSULP movement at all is refused (everything came back)', async () => {
+    const r = await buildAndPreview(lockFeeGw(undefined, () => []), exitReq());
+    expect(r.preview.ok).toBe(false);
+    expect(r.preview.error).toContain('500');
+  });
+
+  test('a failed dry-run keeps its own error, untouched', async () => {
+    const gw = lockFeeGw(() => ({ status: 'Failed', error_message: 'boom' }), () => []);
+    const r = await buildAndPreview(gw, exitReq());
+    expect(r.preview.status).toBe('Failed');
+    expect(r.preview.error).toBe('boom');
+  });
+
+  test('other exits are not subject to the LSULP gate', async () => {
+    const r = await buildAndPreview(lockFeeGw(undefined, () => []), {
+      action: 'withdraw', account: EXIT_ACCOUNT, poolAddress: XRD_STAKING_ADDRESS, validator: EXIT_VALIDATOR, lpAmount: '1',
+    });
+    expect(r.preview.ok).toBe(true);
   });
 });

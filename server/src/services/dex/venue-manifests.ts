@@ -201,8 +201,10 @@ export function buildWeftSupplyWithdraw(
 /// (this is the shape a naive mirror of `add_liquidity` gets wrong):
 ///   remove_liquidity(lsulp: Bucket, target_lsu: ResourceAddress, Option<..> = None)
 /// The caller CHOOSES which validator's LSU to be paid in — the pool does not
-/// hand back "your" LSU — so `targetLsuResource` must be an LSU the pool actually
-/// holds enough of, else the dry-run fails (the sign-gate).
+/// hand back "your" LSU — so `targetLsuResource` should be an LSU the pool holds
+/// enough of. If it is short, the pool PART-FILLS and returns the unfilled LSULP
+/// to the caller; the dry-run still Succeeds, so it is NOT a safe gate by itself.
+/// build-service.ts applies `refuseLsulpPartFill` (preview.ts) on top.
 ///
 /// `unstakeValidator` selects the exit's terminus:
 ///   - undefined → stop at the LSU (instant, still earning, NOT XRD).

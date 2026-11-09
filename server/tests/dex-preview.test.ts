@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { summarizePreview, toScaled, fromScaled } from '../src/services/dex/preview';
+import { summarizePreview, refuseLsulpPartFill, toScaled, fromScaled, type PreviewResult } from '../src/services/dex/preview';
 import type { PreviewResponse } from '../src/services/gateway';
 
 const ACCT = 'account_rdx128lggt503h7m2dhzqnrkkqv4zklxcjmdggr8xxtqy8e47p7fkmd8cx';
@@ -61,5 +61,32 @@ describe('summarizePreview — the non-custodial sign-gate', () => {
     expect(r.ok).toBe(false);
     expect(r.error).toContain('ApplicationError');
     expect(r.movements).toEqual([]);
+  });
+});
+
+describe('refuseLsulpPartFill — pure gate', () => {
+  const ok = (amt?: string): PreviewResult => ({
+    ok: true, status: 'Succeeded', movements: amt ? [{ resource: LP, amount: amt }] : [],
+  });
+  test('exact spend passes; over-spend passes (never refuses a full fill)', () => {
+    expect(refuseLsulpPartFill(ok('-500'), LP, '500').ok).toBe(true);
+    expect(refuseLsulpPartFill(ok('-500.5'), LP, '500').ok).toBe(true);
+  });
+  test('net spend below the request is refused and names the returned amount', () => {
+    const r = refuseLsulpPartFill(ok('-1.9314'), LP, '500');
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe('Refused');
+    expect(r.error).toContain('498.0686');
+  });
+  test('no movement for the resource is refused', () => {
+    expect(refuseLsulpPartFill(ok(), LP, '1').ok).toBe(false);
+  });
+  test('a different resource moving does not count as LSULP spent', () => {
+    const p: PreviewResult = { ok: true, status: 'Succeeded', movements: [{ resource: XRD, amount: '-500' }] };
+    expect(refuseLsulpPartFill(p, LP, '500').ok).toBe(false);
+  });
+  test('already-failed previews pass through unchanged', () => {
+    const f: PreviewResult = { ok: false, status: 'Failed', error: 'x', movements: [] };
+    expect(refuseLsulpPartFill(f, LP, '1')).toBe(f);
   });
 });

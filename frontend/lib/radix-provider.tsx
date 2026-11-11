@@ -67,7 +67,7 @@ const NETWORK_ID = parseInt(
 // /.well-known/radix.json — the wallet verifies the claim in both directions.
 const DAPP_DEFINITION_ADDRESS =
   process.env.NEXT_PUBLIC_DAPP_DEFINITION_ADDRESS ||
-  "account_rdx12yp8wps97gzj9w6fq022xzdcw540qettg39neumev7mla6k9lggfna";
+  "account_rdx12xmwchzdn9zu7c396f2yt93wsyhp7jdmyle5c07klgzfzewfek704t";
 
 /**
  * Wallet state for the app, built on the standard Radix dApp Toolkit flow:

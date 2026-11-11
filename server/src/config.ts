@@ -147,7 +147,7 @@ function buildConfig() {
     // frontend/tests/dapp-definition.test.ts fails CI if the three drift.
     DAPP_DEFINITION_ADDRESS: optionalEnv(
       'DAPP_DEFINITION_ADDRESS',
-      'account_rdx12yp8wps97gzj9w6fq022xzdcw540qettg39neumev7mla6k9lggfna',
+      'account_rdx12xmwchzdn9zu7c396f2yt93wsyhp7jdmyle5c07klgzfzewfek704t',
     ),
     ROLA_EXPECTED_ORIGIN: optionalEnv('ROLA_EXPECTED_ORIGIN', 'http://localhost:3000'),
     // Set true behind HTTPS (Caddy) — marks the session cookie Secure.

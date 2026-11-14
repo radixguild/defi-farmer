@@ -79,6 +79,10 @@ origin must be in the dApp definition's on-chain `claimed_websites`
 (`frontend/public/.well-known/radix.json` must name the same account). The operator's own
 deploy tooling is not part of this repository.
 
+To pause deposits for a venue kind or a single pool while leaving withdrawals available, set
+`DEX_DEPOSITS_DISABLED_KINDS` and/or `DEX_DEPOSITS_DENY_POOLS` and restart the agent. Syntax,
+scope and failure behaviour: [docs/DEX-INTEGRATION.md](docs/DEX-INTEGRATION.md#pausing-deposits-operator-switch).
+
 ## Security
 
 Private reporting only; see [SECURITY.md](SECURITY.md). Never test against the live

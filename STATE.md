@@ -17,6 +17,10 @@ change, not on a schedule._
   validator LSU. The user would have to exit in smaller parts or wait.
 - **Size threshold.** The note gives no exact threshold. It estimates about 554k LSULP for the
   LSU the app picks today, from a 2026-11-07 vault read. That figure is inferred, not measured.
+- **Deposit switch.** The operator can pause deposits per venue kind or per pool
+  (`DEX_DEPOSITS_DISABLED_KINDS`, `DEX_DEPOSITS_DENY_POOLS`). The switch does not gate
+  withdrawals or position recording. See
+  [docs/DEX-INTEGRATION.md](docs/DEX-INTEGRATION.md#pausing-deposits-operator-switch).
 - Users: still zero recorded (see Users below). Feature work still paused.
 
 > Superseded 2026-11-15: the sections below are kept as written on 2026-11-06 unless marked

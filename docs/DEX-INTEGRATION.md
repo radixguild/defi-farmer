@@ -75,6 +75,37 @@ QuantaSwap `…762h383wa3` seen in the scan matches the code pin. **Deliberately
 LsuPool (`package_rdx1pkfrtmv980h85c9nvhxa7c9y0z4vxzt25c3gdzywz5l52g5t0hdeey`). A box
 without these env lines (a fresh deploy, a dev checkout) falls back to the two code pins.
 
+### Pausing deposits (operator switch)
+
+A package pin is all-or-nothing: removing it stops deposits **and** app-built exits for
+every pool of that kind, and adding it enables every pool in that package. Two env lists
+let an operator keep a pin (so exits keep building) while refusing deposits. Both are
+comma-separated and read at call time (`server/src/services/dex/deposit-switch.ts`); a
+change takes effect when the agent process restarts with the new environment.
+
+| Env var | Value | Effect |
+|---|---|---|
+| `DEX_DEPOSITS_DISABLED_KINDS` | kind names from `DEX_PACKAGE_ENV`, e.g. `caviarnine_weighted,defiplaza_pair` | `POST /api/dex/build` refuses action `deposit` for every pool of those kinds |
+| `DEX_DEPOSITS_DENY_POOLS` | pool `component_rdx1…` addresses | the same refusal for those pools only |
+
+- **Only deposits are gated.** `withdraw` builds as before, and `POST /api/positions`
+  (recording a deposit that was already signed) does not consult the switch. Single-sided
+  venues (native staking, LSULP, Weft) are outside it.
+- **It can only narrow, never widen.** The refusal runs after the pool resolver, so a pool on
+  an unpinned or lookalike package is still `unsupported` for deposits and exits alike.
+- **Refusal is a 400 before any manifest is built or previewed.** The error reads
+  `deposits are paused for this venue (<kind>)` or `deposits are paused for this pool`.
+  `GET /api/dex/pool-info` returns `depositsPaused: true` for such a pool and the deposit form
+  shows a notice instead of the inputs.
+- **A value that does not parse fails closed.** An unknown kind name, or a pool entry that
+  is not a mainnet `component_rdx1…` address, makes the whole value invalid. Until it is
+  fixed, every pool deposit is refused with `deposits are unavailable: the deposit switch is
+  misconfigured on the server`, and each bad token is logged at startup as
+  `[deposit-switch] INVALID …`. The process stays up and exits keep working; a startup
+  error would take the exits down with it. Unset or empty means nothing is paused.
+- **Check it.** The agent logs `[deposit-switch] deposits paused — kinds: …; pools: N` at
+  startup when something is paused; read it back with `POST /api/dex/build` for a paused pool.
+
 ## Verified interfaces (real mainnet txids cited)
 
 Bucket order is always the pool's canonical `(x, y)`; preserve `ociswap.ts` x→tokenA / y→tokenB.

@@ -200,8 +200,9 @@ export default function OpportunityDetailPage() {
         : kind === "ociswap_precision" || kind === "caviarnine_quantaswap"
           ? posDec(amountX) || posDec(amountY)
           : posDec(amountX) && posDec(amountY);
+  const depositsPaused = poolInfo?.depositsPaused === true;
   const canDeposit =
-    connected && !!account && !!poolInfo && kind !== "unsupported" &&
+    connected && !!account && !!poolInfo && kind !== "unsupported" && !depositsPaused &&
     amountsValid && oppsSource === "live";
 
   const depositRequest = (coAmount?: string): DexBuildRequest => {
@@ -578,7 +579,13 @@ export default function OpportunityDetailPage() {
               </p>
             )}
 
-            {poolInfo && kind !== "unsupported" && (
+            {depositsPaused && (
+              <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                Deposits into this pool are paused.
+              </p>
+            )}
+
+            {poolInfo && kind !== "unsupported" && !depositsPaused && (
               <>
                 {isVenue ? (
                   <div className="space-y-2">

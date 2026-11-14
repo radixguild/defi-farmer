@@ -9,6 +9,7 @@ import type { AgentLoop } from '../src/agent/loop';
 import { DEFIPLAZA_ROUTER, type LpModel, type ResolvedPool } from '../src/services/dex/pool-resolver';
 import { buildFungibleWithdraw, buildDefiplazaWithdraw, buildNftWithdraw } from '../src/services/dex/manifests';
 import { assertNfLocalId } from '../src/services/dex/rtm';
+import { DEPOSIT_SWITCH_ENV } from '../src/config';
 
 const USER = 'account_rdx1c9dka8al9kd0a93q8ag4mjs3fzassqef0lk6hg757tqfma5hu0n3gy';
 const OTHER = 'account_rdx1cxaqwoxvxyvuqzvxw2z5c9dka8al9kd0a93q8ag4mjs3fzassqef0lk';
@@ -221,6 +222,28 @@ describe('recordDeposit fungible-LP fallback', () => {
     const manifest = buildFungibleWithdraw(USER, pool, result.position.lp_amount as string);
     expect(manifest).toContain(LP_RES);
     expect(manifest).toContain('"remove_liquidity"');
+  });
+
+  test('recording is independent of the operator deposit switch (paused kind, denied pool, even a malformed value)', async () => {
+    const saved = { k: process.env[DEPOSIT_SWITCH_ENV.kinds], p: process.env[DEPOSIT_SWITCH_ENV.pools] };
+    try {
+      for (const [kinds, pools] of [
+        ['ociswap_basic,caviarnine_weighted,defiplaza_pair', POOL],
+        ['nope', 'not-an-address'],
+      ]) {
+        testDb.exec('DELETE FROM positions');
+        process.env[DEPOSIT_SWITCH_ENV.kinds] = kinds;
+        process.env[DEPOSIT_SWITCH_ENV.pools] = pools;
+        const result = await recordDeposit(fungibleTx, input, resolveFungibleLp);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.position.pool_address).toBe(POOL);
+        expect(testDb.prepare('SELECT COUNT(*) AS n FROM positions').get()).toEqual({ n: 1 });
+      }
+    } finally {
+      for (const [key, val] of [[DEPOSIT_SWITCH_ENV.kinds, saved.k], [DEPOSIT_SWITCH_ENV.pools, saved.p]] as const) {
+        if (val === undefined) delete process.env[key]; else process.env[key] = val;
+      }
+    }
   });
 
   test('records the largest LP side for a DefiPlaza co-liquidity add', async () => {

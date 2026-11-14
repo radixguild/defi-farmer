@@ -6,6 +6,7 @@ import { AgentLoop } from './agent/loop.js';
 import { CONFIG } from './config.js';
 import { getDb, closeDb } from './db/schema.js';
 import { startApi } from './api.js';
+import { logDepositSwitchStatus } from './services/dex/deposit-switch.js';
 
 async function main() {
   console.log('DeFi Farmer v0.1.0');
@@ -16,6 +17,8 @@ async function main() {
   // no key/account to validate here (money moves only when the user signs).
   void CONFIG.API_AUTH_TOKEN;
   console.log('[config] Configuration validated (advisor — non-custodial, no signing)');
+  // Read-back of the operator deposit switch (never throws; see deposit-switch.ts).
+  logDepositSwitchStatus();
 
   // Initialize database
   getDb();

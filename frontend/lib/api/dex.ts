@@ -47,6 +47,8 @@ export interface DexPoolInfo {
   tokenY: string;
   lpKind: "fungible" | "nft" | "defiplaza";
   shortage?: string;
+  /** Set when the operator has paused deposits into this pool (exits are separate). */
+  depositsPaused?: true;
   suggestion?: RangeSuggestion;
   relAnnualVol?: number;
 }

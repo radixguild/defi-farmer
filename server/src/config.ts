@@ -45,6 +45,17 @@ export const DEX_PACKAGE_ENV = {
 } as const;
 export type PinnedPoolKind = keyof typeof DEX_PACKAGE_ENV;
 
+/// Operator deposit switch (services/dex/deposit-switch.ts). Both lists are
+/// comma-separated and only ever REFUSE deposits; exits are never gated by them.
+/// The names live here so every env name sits beside DEX_PACKAGE_ENV, but the
+/// values are read by deposit-switch.ts at call time, not frozen into CONFIG.
+export const DEPOSIT_SWITCH_ENV = {
+  /// Pool kinds (the keys of DEX_PACKAGE_ENV) whose deposits are paused.
+  kinds: 'DEX_DEPOSITS_DISABLED_KINDS',
+  /// Individual pool component addresses whose deposits are paused.
+  pools: 'DEX_DEPOSITS_DENY_POOLS',
+} as const;
+
 const PACKAGE_RE = /^package_rdx1[a-z0-9]{6,120}$/;
 
 /// Parse the DEX_PACKAGES_* vars. Unset/empty = no extra pins for that kind.

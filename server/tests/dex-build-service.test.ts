@@ -1,8 +1,9 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import {
   resolveFee, isShortagePanic, posNum, deriveRange, multipleToSteps, DexBuildError,
-  buildAndPreview,
+  buildAndPreview, poolInfo,
 } from '../src/services/dex/build-service';
+import { CONFIG, DEPOSIT_SWITCH_ENV, type PinnedPoolKind } from '../src/config';
 import {
   type ResolvedPool, VERIFIED_POOL_PACKAGES, _clearResolverCache,
 } from '../src/services/dex/pool-resolver';
@@ -654,5 +655,224 @@ describe('buildAndPreview — LSULP exit part-fill gate', () => {
       action: 'withdraw', account: EXIT_ACCOUNT, poolAddress: XRD_STAKING_ADDRESS, validator: EXIT_VALIDATOR, lpAmount: '1',
     });
     expect(r.preview.ok).toBe(true);
+  });
+});
+
+// ── Operator deposit switch ─────────────────────────────────────────────────
+//
+// Deposits can be paused per venue kind or per pool while exits keep building.
+// The fixtures resolve because tests/setup.ts pins the Basic/Weighted/PlazaPair
+// packages (and the recorded defaults cover Precision/QuantaSwap), so each case
+// below is the operator's real situation: pin restored, deposits switched off.
+
+describe('buildAndPreview — operator deposit switch', () => {
+  const KINDS_ENV = DEPOSIT_SWITCH_ENV.kinds;
+  const POOLS_ENV = DEPOSIT_SWITCH_ENV.pools;
+  const saved = { kinds: process.env[KINDS_ENV], pools: process.env[POOLS_ENV] };
+  const acct = EXIT_ACCOUNT;
+
+  function setSwitch(kinds?: string, pools?: string) {
+    if (kinds === undefined) delete process.env[KINDS_ENV]; else process.env[KINDS_ENV] = kinds;
+    if (pools === undefined) delete process.env[POOLS_ENV]; else process.env[POOLS_ENV] = pools;
+  }
+
+  beforeEach(() => {
+    setSwitch();
+    _clearResolverCache();
+    _clearBoardCache();
+  });
+  afterEach(() => {
+    setSwitch(saved.kinds, saved.pools);
+    _clearResolverCache();
+  });
+
+  type Req = Parameters<typeof buildAndPreview>[1];
+  const deposits: Record<string, Req> = {
+    ociswap_basic: { action: 'deposit', account: acct, poolAddress: LF_BASIC, amountX: '10', amountY: '100' },
+    caviarnine_weighted: { action: 'deposit', account: acct, poolAddress: LF_WEIGHTED, amountX: '100', amountY: '10' },
+    ociswap_precision: { action: 'deposit', account: acct, poolAddress: LF_PRECISION, amountX: '0.001', amountY: '100', range: { below: 3, above: 3 } },
+    caviarnine_quantaswap: { action: 'deposit', account: acct, poolAddress: LF_QUANTA, amountX: '100', amountY: '5', range: { below: 2, above: 2 } },
+    defiplaza_pair: { action: 'deposit', account: acct, poolAddress: LF_PLAZA, inputToken: XRD, inputAmount: '100' },
+  };
+  const withdraws: Record<string, Req> = {
+    ociswap_basic: { action: 'withdraw', account: acct, poolAddress: LF_BASIC, lpAmount: '1' },
+    caviarnine_weighted: { action: 'withdraw', account: acct, poolAddress: LF_WEIGHTED, lpAmount: '1' },
+    ociswap_precision: { action: 'withdraw', account: acct, poolAddress: LF_PRECISION, localId: '#421#' },
+    caviarnine_quantaswap: { action: 'withdraw', account: acct, poolAddress: LF_QUANTA, localId: EXIT_CLAIM_ID },
+    defiplaza_pair: { action: 'withdraw', account: acct, poolAddress: LF_PLAZA, lpToken: LF_PLAZA_QUOTE_LP, lpAmount: '1' },
+  };
+  const kinds = Object.keys(deposits);
+
+  test('a paused kind refuses deposits with a DexBuildError, before anything is previewed', async () => {
+    setSwitch('caviarnine_weighted,defiplaza_pair');
+    for (const kind of ['caviarnine_weighted', 'defiplaza_pair']) {
+      const gw = lockFeeGw();
+      const p = buildAndPreview(gw, deposits[kind]);
+      await expect(p).rejects.toBeInstanceOf(DexBuildError);
+      await expect(p).rejects.toThrow(new RegExp(`deposits are paused for this venue \\(${kind}\\)`));
+      expect(gw.previewed).toEqual([]);
+    }
+  });
+
+  test('the refusal comes before any live-state read of the pool (no refresh, no manifest)', async () => {
+    setSwitch('defiplaza_pair');
+    const gw = lockFeeGw();
+    const reads: string[] = [];
+    const real = gw.entityDetailsGlobal.bind(gw);
+    gw.entityDetailsGlobal = (async (addresses: string[], opts?: unknown) => {
+      reads.push(addresses[0]);
+      return real(addresses, opts as never);
+    }) as typeof gw.entityDetailsGlobal;
+    await expect(buildAndPreview(gw, deposits.defiplaza_pair)).rejects.toThrow(/deposits are paused/);
+    expect(reads.filter((a) => a === LF_PLAZA).length).toBe(1); // the resolve; an allowed deposit reads it twice
+    expect(gw.previewed).toEqual([]);
+    setSwitch();
+    _clearResolverCache();
+    const gw2 = lockFeeGw();
+    const reads2: string[] = [];
+    const real2 = gw2.entityDetailsGlobal.bind(gw2);
+    gw2.entityDetailsGlobal = (async (addresses: string[], opts?: unknown) => {
+      reads2.push(addresses[0]);
+      return real2(addresses, opts as never);
+    }) as typeof gw2.entityDetailsGlobal;
+    await buildAndPreview(gw2, deposits.defiplaza_pair);
+    expect(reads2.filter((a) => a === LF_PLAZA).length).toBe(2);
+  });
+
+  test('a denied pool refuses deposits; its kind-mates and other kinds still build', async () => {
+    setSwitch(undefined, LF_WEIGHTED);
+    const gw = lockFeeGw();
+    const p = buildAndPreview(gw, deposits.caviarnine_weighted);
+    await expect(p).rejects.toBeInstanceOf(DexBuildError);
+    await expect(p).rejects.toThrow(/deposits are paused for this pool/);
+    expect(gw.previewed).toEqual([]);
+    for (const kind of kinds.filter((k) => k !== 'caviarnine_weighted')) {
+      const ok = await buildAndPreview(lockFeeGw(), deposits[kind]);
+      expect(ok.preview.ok).toBe(true);
+    }
+  });
+
+  test('exits stay open: a paused kind and a denied pool still build withdraws', async () => {
+    setSwitch('caviarnine_weighted,defiplaza_pair', LF_BASIC);
+    for (const kind of ['caviarnine_weighted', 'defiplaza_pair', 'ociswap_basic']) {
+      const gw = lockFeeGw();
+      const r = await buildAndPreview(gw, withdraws[kind]);
+      expect(r.preview.ok).toBe(true);
+      expect(r.manifest.length).toBeGreaterThan(0);
+      expect(gw.previewed).toEqual([r.manifest]);
+    }
+  });
+
+  test('unlisted kinds and pools build deposits exactly as before', async () => {
+    setSwitch('caviarnine_weighted', LF_BASIC);
+    for (const kind of ['ociswap_precision', 'caviarnine_quantaswap', 'defiplaza_pair']) {
+      const gw = lockFeeGw();
+      const r = await buildAndPreview(gw, deposits[kind]);
+      expect(String(r.pool.kind)).toBe(kind);
+      expect(r.preview.ok).toBe(true);
+      expect(gw.previewed.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('switch unset or empty: every kind builds deposits and withdraws', async () => {
+    for (const env of [[undefined, undefined], ['', ''], [' , ', ' ']] as const) {
+      setSwitch(env[0], env[1]);
+      for (const kind of kinds) {
+        expect((await buildAndPreview(lockFeeGw(), deposits[kind])).preview.ok).toBe(true);
+        expect((await buildAndPreview(lockFeeGw(), withdraws[kind])).preview.ok).toBe(true);
+      }
+    }
+  });
+
+  test('a malformed value fails closed: every pool deposit is refused, exits still build', async () => {
+    const malformed: Array<[string | undefined, string | undefined]> = [
+      ['caviarnine_weigthed', undefined], // typo'd kind
+      ['defiplaza_pair,nope', undefined], // one bad token beside a good one
+      [undefined, 'not-an-address'],
+      [undefined, `${LF_WEIGHTED},account_rdx1c9dka8al9kd0a93q8ag4mjs3fzassqef0lk6hg757tqfma5hu0n3gy`],
+    ];
+    for (const [k, p] of malformed) {
+      setSwitch(k, p);
+      for (const kind of kinds) {
+        const gw = lockFeeGw();
+        const req = buildAndPreview(gw, deposits[kind]);
+        await expect(req).rejects.toBeInstanceOf(DexBuildError);
+        await expect(req).rejects.toThrow(/deposit switch is misconfigured/);
+        expect(gw.previewed).toEqual([]);
+        expect((await buildAndPreview(lockFeeGw(), withdraws[kind])).preview.ok).toBe(true);
+      }
+    }
+  });
+
+  test('single-sided venue deposits are outside the switch', async () => {
+    setSwitch('caviarnine_weighted,defiplaza_pair', LF_BASIC);
+    const r = await buildAndPreview(lockFeeGw(), {
+      action: 'deposit', account: acct, poolAddress: XRD_STAKING_ADDRESS, amountX: '100',
+    });
+    expect(r.preview.ok).toBe(true);
+  });
+
+  test('poolInfo flags a paused pool so the UI can say so; unpaused pools carry no flag', async () => {
+    setSwitch('caviarnine_weighted', LF_PLAZA);
+    const w = await poolInfo(lockFeeGw(), LF_WEIGHTED);
+    expect(w.kind).toBe('caviarnine_weighted');
+    expect(w.depositsPaused).toBe(true);
+    expect((await poolInfo(lockFeeGw(), LF_PLAZA)).depositsPaused).toBe(true);
+    const open = await poolInfo(lockFeeGw(), LF_BASIC);
+    expect(open.kind).toBe('ociswap_basic');
+    expect(open.depositsPaused).toBeUndefined();
+    setSwitch('nope');
+    expect((await poolInfo(lockFeeGw(), LF_BASIC)).depositsPaused).toBe(true);
+  });
+
+  describe('repo default: no env pins', () => {
+    // tests/setup.ts pins Basic/Weighted/PlazaPair for the whole suite and CONFIG
+    // freezes those pins on first read, so this block empties the live pin arrays
+    // and restores them afterwards. That is the state of a checkout with no
+    // DEX_PACKAGES_* set: only the packages recorded in pool-resolver.ts remain.
+    const pinned: PinnedPoolKind[] = ['ociswap_basic', 'caviarnine_weighted', 'defiplaza_pair'];
+    let backup: Record<string, string[]> = {};
+    beforeEach(() => {
+      backup = {};
+      for (const k of pinned) {
+        backup[k] = [...CONFIG.DEX_PACKAGE_PINS[k]];
+        CONFIG.DEX_PACKAGE_PINS[k].length = 0;
+      }
+      _clearResolverCache();
+    });
+    afterEach(() => {
+      for (const k of pinned) CONFIG.DEX_PACKAGE_PINS[k].splice(0, CONFIG.DEX_PACKAGE_PINS[k].length, ...backup[k]);
+      _clearResolverCache();
+    });
+
+    test('caviarnine_weighted and defiplaza_pair resolve as unsupported; deposits are refused, no switch set', async () => {
+      for (const [kind, bp] of [['caviarnine_weighted', 'WeightedPool'], ['defiplaza_pair', 'PlazaPair']] as const) {
+        const gw = lockFeeGw();
+        const p = buildAndPreview(gw, deposits[kind]);
+        await expect(p).rejects.toBeInstanceOf(DexBuildError);
+        await expect(p).rejects.toThrow(new RegExp(`unsupported pool blueprint: ${bp} \\(package not on the verified allowlist\\)`));
+        expect(gw.previewed).toEqual([]);
+        expect((await poolInfo(lockFeeGw(), deposits[kind].poolAddress)).kind).toBe('unsupported');
+      }
+    });
+
+    test('exits to those unverified packages are refused too, and the switch is no way around that', async () => {
+      for (const env of [[undefined, undefined], ['caviarnine_weighted,defiplaza_pair', LF_PLAZA]] as const) {
+        setSwitch(env[0], env[1]);
+        for (const kind of ['caviarnine_weighted', 'defiplaza_pair']) {
+          const gw = lockFeeGw();
+          const p = buildAndPreview(gw, withdraws[kind]);
+          await expect(p).rejects.toThrow(/unsupported pool blueprint: .* \(package not on the verified allowlist\)/);
+          expect(gw.previewed).toEqual([]);
+        }
+      }
+    });
+
+    test('the recorded Precision/QuantaSwap packages still build deposits and exits', async () => {
+      for (const kind of ['ociswap_precision', 'caviarnine_quantaswap']) {
+        expect((await buildAndPreview(lockFeeGw(), deposits[kind])).preview.ok).toBe(true);
+        expect((await buildAndPreview(lockFeeGw(), withdraws[kind])).preview.ok).toBe(true);
+      }
+    });
   });
 });

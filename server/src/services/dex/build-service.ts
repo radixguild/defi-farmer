@@ -35,6 +35,7 @@ import {
 import { getValidatorBoard, type ValidatorRow } from '../validator-board.js';
 import { XRD_STAKING_ADDRESS } from '../staking.js';
 import { LSULP_RESOURCE } from '../lsu-pool.js';
+import { currentDepositSwitch, depositRefusal } from './deposit-switch.js';
 
 const XRD_RESOURCE =
   'resource_rdx1tknxxxxxxxxxradxrdxxxxxxxxx009923554798xxxxxxxxxradxrd';
@@ -277,6 +278,9 @@ export interface PoolInfoResult {
   /// 'fungible' | 'nft' | 'defiplaza' — which withdraw inputs a position needs.
   lpKind: ResolvedPool['lp']['kind'];
   shortage?: ResolvedPool['shortage'];
+  /// True when the operator deposit switch refuses deposits into this pool, so
+  /// the UI can say "paused" instead of failing at build time. Absent otherwise.
+  depositsPaused?: true;
   /// Concentrated pools with live pair risk only: the optimizer's pick.
   suggestion?: RangeChoice;
   relAnnualVol?: number;
@@ -306,6 +310,11 @@ export async function poolInfo(
     lpKind: pool.lp.kind,
   };
   if (pool.kind === 'unsupported') return out;
+  if (depositRefusal(currentDepositSwitch(), pool)) {
+    // Paused: the form is not shown, so skip the live-state reads and suggestion.
+    out.depositsPaused = true;
+    return out;
+  }
   pool = await refreshDynamic(gw, pool);
   out.shortage = pool.shortage;
 
@@ -380,6 +389,14 @@ export async function buildAndPreview(gw: GatewayClient, req: DexBuildRequest): 
     // its own wording so the caller is not told the blueprint itself is unknown.
     const why = pool.unsupportedReason === 'unpinned_package' ? ' (package not on the verified allowlist)' : '';
     throw new DexBuildError(`unsupported pool blueprint: ${pool.blueprintName || 'unknown'}${why}`);
+  }
+  // Operator deposit switch (deposit-switch.ts). Deposits only: withdraw falls
+  // through untouched. It runs AFTER the unsupported/unpinned refusal above, so
+  // it can only narrow what is allowed, never widen it, and BEFORE any further
+  // Gateway read, manifest build or preview.
+  if (req.action === 'deposit') {
+    const refusal = depositRefusal(currentDepositSwitch(), pool);
+    if (refusal) throw new DexBuildError(refusal);
   }
   pool = await refreshDynamic(gw, pool); // fresh activeTick/activeBin/priceSqrt/shortage
 

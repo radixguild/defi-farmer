@@ -1,7 +1,26 @@
 # State
 
-_Updated 2026-11-06. This is the project's public status page. It changes when the facts
+_Updated 2026-11-15. This is the project's public status page. It changes when the facts
 change, not on a schedule._
+
+## Now (2026-11-15)
+
+- Live at https://farmer.radixguild.com. Main is at `38441ce`.
+- The exact commit the live site runs is not recorded. Whether it includes the two changes
+  below is unknown.
+- Merged since the 2026-11-06 update:
+  - #8 (2026-11-09): LSULP exits are refused at the sign gate if the dry-run would only
+    part-fill. Design note: [docs/design/lsulp-exit-part-fill.md](docs/design/lsulp-exit-part-fill.md).
+  - #9 (2026-11-11): the dApp definition moved to a new account.
+- **LSULP part-fill limit.** If an LSULP withdrawal would return any LSULP unfilled, the app
+  refuses it and shows the returned amount. It does not part-fill and does not pick another
+  validator LSU. The user would have to exit in smaller parts or wait.
+- **Size threshold.** The note gives no exact threshold. It estimates about 554k LSULP for the
+  LSU the app picks today, from a 2026-11-07 vault read. That figure is inferred, not measured.
+- Users: still zero recorded (see Users below). Feature work still paused.
+
+> Superseded 2026-11-15: the sections below are kept as written on 2026-11-06 unless marked
+> otherwise. Where they differ from "Now", "Now" is current.
 
 ## Deployed
 
@@ -45,6 +64,9 @@ Why it paused:
 
 ## Known gaps
 
+- LSULP exits above the picked LSU's depth are refused, not filled (#8, 2026-11-09). Choosing
+  the exit LSU by pool depth is listed in the design note as a possible later improvement; it
+  is not built.
 - CaviarNine LSU-pool exits pass `None` for the credit-receipt (LSUCR) proof. A schema read
   and mainnet previews on 2026-11-05 confirmed that `None` is valid. Passing the receipt's
   proof would waive the pool's 0.07% fee on the credited amount for that LSU, and the

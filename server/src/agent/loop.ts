@@ -304,9 +304,11 @@ export class AgentLoop {
         console.error(`[pools] defiplaza refresh error: ${(err as Error).message}`),
       );
       // Radix-wide yield view (GET /api/yields): read-only, self-throttled
-      // (15 min), never feeds scoring. Reuses this tick's staking APY.
+      // (15 min), never feeds scoring. Reuses this tick's staking APY. Not
+      // awaited: a slow source must not delay the tick (the throttle stamp is
+      // set first, so overlapping calls return at once).
       const staking = rawPools.find((p) => p.yieldKind === 'staking');
-      await refreshYieldView({
+      void refreshYieldView({
         stakingApyPct: staking && staking.apy > 0 ? staking.apy : null,
         minDepthUsd: parseFloat(CONFIG.MIN_POOL_TVL_USD),
       }).catch((err) => console.error(`[pools] yield view refresh error: ${(err as Error).message}`));

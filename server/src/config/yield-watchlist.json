@@ -12,23 +12,23 @@
   "kickers": [
     {
       "venue": "DefiPlaza validator",
-      "paidIn": "DFP2",
-      "advertised": "8.6% APY for XRD stakers, paid weekly in DFP2 LP tokens",
+      "paidIn": "DFP2 LP tokens, weekly",
+      "advertised": "8.6% APY for XRD stakers",
       "source": "https://defiplaza.net/rewards",
       "checked": "2026-11-19",
       "status": "unverified"
     },
     {
       "venue": "Astrolescent validator",
-      "paidIn": "ASTRL",
-      "advertised": "Validator staking 1% + 4.7% XRD",
+      "paidIn": "not stated for the 1% (the page's rewards column is in ASTRL); the 4.7% is labelled XRD",
+      "advertised": "Validator staking incentive APY shown as \"1% + 4.7% XRD\"",
       "source": "https://astrolescent.com/rewards",
       "checked": "2026-11-19",
       "status": "unverified"
     }
   ],
   "chainNote": {
-    "text": "Thin market. The Radix Foundation said on 28 Apr 2026 that market making on the main exchanges listing XRD was pre-funded through September, with an option to extend; whether it was extended is not known here. The same post says Radix Rewards were distributed and are no longer hosted by the Foundation.",
+    "text": "The Radix Foundation said on 28 Apr 2026 that market making on the main exchanges listing XRD was pre-funded through September, with an option to extend; whether it was extended is not known here. The same post says Radix Rewards were distributed and are no longer hosted by the Foundation.",
     "source": "https://www.radixdlt.com/blog/foundation-update-moving-to-maintenance-mode"
   }
 }

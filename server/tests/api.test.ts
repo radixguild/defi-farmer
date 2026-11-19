@@ -594,9 +594,9 @@ describe('API /api/yields', () => {
       rules: string[]; kickers: Array<{ status: string }>; banner: { note: string };
     };
     expect(Object.keys(body.sections).sort()).toEqual(['alr', 'feeApr', 'staking']);
-    expect(body.rules.length).toBe(4);
+    expect(body.rules.length).toBe(5);
     expect(body.kickers.every((k) => k.status === 'unverified')).toBe(true);
-    expect(body.banner.note).toMatch(/Thin market/);
+    expect(body.banner.note).toMatch(/market making/);
   });
 });
 

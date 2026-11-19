@@ -12,7 +12,7 @@ const EMPTY_VIEW: YieldView = {
   assets: [],
   sections: { staking: [], feeApr: [], alr: [] },
   kickers: [],
-  excluded: { belowFloorAssets: [], rowsBelowDepthFloor: 0 },
+  excluded: { belowFloorAssets: [], rowsBelowDepthFloor: 0, rowsDepthUnknown: 0, depthFloorXrd: null },
 };
 
 // The server refreshes at most every 15 minutes; polling faster only re-reads it.

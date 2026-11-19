@@ -190,6 +190,18 @@ describe('buildYieldView', () => {
     // 872 hUSDC x 946 XRD = ~825k XRD, below the 1000 USD floor (~997k XRD at this price).
     expect(v.sections.alr.find((r) => r.pool === 'pool_husdc_xrd_base')).toBeUndefined();
     expect(v.excluded.rowsBelowDepthFloor).toBe(1);
+    expect(v.excluded.rowsDepthUnknown).toBe(0);
+    expect(v.excluded.depthFloorXrd).toBeCloseTo(1000 / 0.0010034, 0);
+  });
+
+  test('an unknown depth is shown as unavailable and counted, never dropped as dust', () => {
+    const noTvl = { ...POOLS[1], address: 'component_rdx1notvl', total_value_locked: {} };
+    const v = buildYieldView(inputs({ ociswapPools: [...POOLS, noTvl] }));
+    const row = v.sections.feeApr.find((r) => r.pool === 'component_rdx1notvl')!;
+    expect(row.depthXrd).toBeNull();
+    expect(v.sections.feeApr[v.sections.feeApr.length - 1].pool).toBe('component_rdx1notvl'); // sorted last
+    expect(v.excluded.rowsDepthUnknown).toBe(1);
+    expect(v.excluded.rowsBelowDepthFloor).toBe(1);
   });
 
   test('without Astrolescent, rows still show and prices are unavailable (floor unknown, not applied)', () => {

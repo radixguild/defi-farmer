@@ -27,17 +27,22 @@ depth.
 1. **Price = Astrolescent `tokenPriceXRD`**, cross-checked against Ociswap's `price.xrd.now`
    from the deepest Ociswap pool that pairs the token with XRD. If they differ by more than 5%
    the asset is flagged `price_disagree` and both prices are shown. They are never averaged.
-2. **Liquidity floor.** A token whose Astrolescent `aggregateTVL` is under $1,000 or whose
-   `aggregateVolume7D` is 0 is `below_floor`: it gets no rows. This removes the junk prices
-   (BONK at trillions of USD, migrated duplicates with a placeholder TVL of exactly 1000 and no
-   volume).
-3. **Everything in XRD.** USD appears once: XRD/USD from DefiLlama, used for the banner and an
-   asset's USD price (needed for the off-peg flag). No source's own USD fields are used.
+2. **Liquidity floor.** A token whose Astrolescent `aggregateTVL` (USD) is under $1,000 or
+   whose `aggregateVolume7D` is 0 is `below_floor`: it gets no rows. This removes the junk
+   prices (BONK at trillions of USD, migrated duplicates with a placeholder TVL of exactly 1000
+   and no volume). If Astrolescent is down, the floor cannot be applied: rows still show, with
+   prices unavailable.
+3. **Everything in XRD.** USD prices come only from DefiLlama's XRD/USD, used for the banner and
+   an asset's USD price (needed for the off-peg flag). The one source USD figure used is
+   Astrolescent's `aggregateTVL`, as the input to rule 2.
 
 ## Rows and fields
 
 Rows exist only for pools whose two tokens are both on the watchlist, so junk pairs never
-reach the page. Three sections, each sorted by exit depth, never merged into one ranked list:
+reach the page. A **pool floor** also applies: a row whose exit depth is known and under
+`MIN_POOL_TVL_USD` ($1,000, converted to XRD at the DefiLlama price) is left out, and the page
+shows how many were left out. A row whose depth is unknown (no TVL reported, or no price) is
+shown with depth unavailable and sorted last, never dropped as if it were empty. Three sections, each sorted by exit depth, never merged into one ranked list:
 
 - **Staking APY**: native XRD staking (Gateway). Exit: the network unstake delay, not a pool.
 - **Fee APR (no IL)**: Ociswap pools. `apr.7d` is fee income only; impermanent loss is not in it.
@@ -66,7 +71,8 @@ price, aggregate TVL, 7d volume, flags, 7-day price change.
 
 ## Chain banner
 
-XRD/USD, chain TVL, and a config note that carries only what a source backs: the Radix
+XRD/USD and chain TVL (DefiLlama), which show how thin the market is, and a config note that
+carries only what its source backs: the Radix
 Foundation's 28 Apr 2026 post says exchange market making was pre-funded "through September"
 with an option to extend (whether it was extended is not known here), and that Radix Rewards
 were distributed and are no longer hosted by the Foundation.
@@ -82,8 +88,9 @@ the same resource as REDDICKS), WOWO, hUSDC, xUSDC, DFP2, ASTRL.
 
 Table `yield_snapshots (day, kind, key, value)`, one row per UTC day per value (`INSERT OR
 IGNORE`), kinds `price_xrd`, `return_pct`, `depth_xrd`. The view reads the value from 7 days
-earlier to show a 7d change; missing history shows as unavailable. Pruned with the existing
-retention sweep window.
+earlier (within a 3-day window) to show a 7d change; missing history shows as unavailable. The
+table prunes itself to 60 days on each write (it is not part of the pool-snapshot retention
+sweep).
 
 ## Don't build
 
@@ -96,6 +103,7 @@ retention sweep window.
 
 ## Serving
 
-`GET /api/yields` (public, read-only), refreshed by the agent loop at most every 15 minutes,
+`GET /api/yields` (public, read-only), refreshed by the agent loop at most every 15 minutes
+(not awaited, so a slow source never delays a scan tick),
 with per-source health (`astrolescent`, `ociswap-pools`, `defillama-xrd`, `defillama-chains`)
 on `/api/status`. Frontend: `/yields`.

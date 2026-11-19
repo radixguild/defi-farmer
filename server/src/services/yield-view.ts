@@ -139,13 +139,22 @@ export interface YieldView {
   assets: AssetRow[];
   sections: { staking: YieldRow[]; feeApr: YieldRow[]; alr: YieldRow[] };
   kickers: Kicker[];
-  excluded: { belowFloorAssets: string[]; rowsBelowDepthFloor: number };
+  excluded: {
+    belowFloorAssets: string[];
+    /// Rows dropped because their KNOWN exit depth is under the pool floor.
+    rowsBelowDepthFloor: number;
+    /// Rows shown with depth unavailable (no TVL reported, or no price).
+    rowsDepthUnknown: number;
+    /// The pool floor in XRD (MIN_POOL_TVL_USD / XRD-USD); null when XRD/USD is unknown.
+    depthFloorXrd: number | null;
+  };
 }
 
 const RULES = [
   'Price = Astrolescent tokenPriceXRD, cross-checked against Ociswap; more than 5% apart is flagged and both are shown, never averaged.',
-  'Liquidity floor: a token with Astrolescent aggregate TVL under $1,000 or zero 7-day volume gets no rows.',
-  'Everything is in XRD. USD appears once, from DefiLlama’s XRD price.',
+  'Liquidity floor: a token with Astrolescent aggregate TVL (USD) under $1,000 or zero 7-day volume gets no rows. If Astrolescent is down, the floor is not applied and prices show as unavailable.',
+  'Pool floor: a row whose exit depth is known and under $1,000 (converted to XRD at the DefiLlama price) is left out and counted. Unknown depth is shown as unavailable, not dropped.',
+  'Everything is in XRD. USD prices come only from DefiLlama’s XRD price; the one source USD figure used is Astrolescent’s aggregate TVL, for the liquidity floor.',
   'Returns are split by type (staking APY, fee APR without IL, ALR with IL) and never ranked together. Each list is sorted by exit depth.',
 ];
 
@@ -264,6 +273,7 @@ export function buildYieldView(inp: YieldInputs, wl: Watchlist = WATCHLIST): Yie
   const sym = (r: string) => byRes.get(r)?.symbol ?? r.slice(-8);
   const minDepthXrd = xrdUsd !== null ? inp.minDepthUsd / xrdUsd : 0;
   let belowDepth = 0;
+  let noDepth = 0;
 
   const withChange = (row: Omit<YieldRow, 'returnChange7dPp' | 'depthChange7dPct'>): YieldRow => {
     const oldRet = hist('return_pct', row.key);
@@ -302,8 +312,11 @@ export function buildYieldView(inp: YieldInputs, wl: Watchlist = WATCHLIST): Yie
     if (!xa || !ya || !usable(xa) || !usable(ya)) continue;
     const apr = n(p.apr?.['7d']);
     if (apr === null) continue;
+    // Unknown depth is shown (as unavailable, sorted last), never treated as 0;
+    // only a KNOWN depth under the floor drops the row.
     const depth = pos(p.total_value_locked?.xrd?.now);
-    if (depth === null || depth < minDepthXrd) {
+    if (depth === null) noDepth++;
+    else if (depth < minDepthXrd) {
       belowDepth++;
       continue;
     }
@@ -333,7 +346,8 @@ export function buildYieldView(inp: YieldInputs, wl: Watchlist = WATCHLIST): Yie
     if (s.alrPct === null || !usable(s.token) || !usable(s.pairedToken)) continue;
     const price = byRes.get(s.token)?.priceXrd ?? null;
     const depth = s.sideReserve !== null && price !== null ? s.sideReserve * price : null;
-    if (depth !== null && depth < minDepthXrd) {
+    if (depth === null) noDepth++;
+    else if (depth < minDepthXrd) {
       belowDepth++;
       continue;
     }
@@ -376,6 +390,8 @@ export function buildYieldView(inp: YieldInputs, wl: Watchlist = WATCHLIST): Yie
     excluded: {
       belowFloorAssets: assets.filter((a) => a.flags.includes('below_floor')).map((a) => a.symbol),
       rowsBelowDepthFloor: belowDepth,
+      rowsDepthUnknown: noDepth,
+      depthFloorXrd: xrdUsd !== null ? minDepthXrd : null,
     },
   };
 }
@@ -541,7 +557,7 @@ export function getYieldView(): YieldView {
       assets: [],
       sections: { staking: [], feeApr: [], alr: [] },
       kickers: WATCHLIST.kickers,
-      excluded: { belowFloorAssets: [], rowsBelowDepthFloor: 0 },
+      excluded: { belowFloorAssets: [], rowsBelowDepthFloor: 0, rowsDepthUnknown: 0, depthFloorXrd: null },
     }
   );
 }

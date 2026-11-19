@@ -257,5 +257,5 @@ export interface YieldView {
   assets: YieldAssetRow[];
   sections: { staking: YieldRowData[]; feeApr: YieldRowData[]; alr: YieldRowData[] };
   kickers: YieldKicker[];
-  excluded: { belowFloorAssets: string[]; rowsBelowDepthFloor: number };
+  excluded: { belowFloorAssets: string[]; rowsBelowDepthFloor: number; rowsDepthUnknown: number; depthFloorXrd: number | null };
 }

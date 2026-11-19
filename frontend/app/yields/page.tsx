@@ -88,7 +88,14 @@ function ReturnTable({ title, note, rows, returnLabel }: { title: string; note: 
                   </td>
                   <td className={`px-3 py-2 text-right font-medium ${r.returnPct < 0 ? "text-red-500" : ""}`}>{fmtPct(r.returnPct)}</td>
                   <td className="px-3 py-2 text-right text-xs text-muted-foreground">{fmtSigned(r.returnChange7dPp, "pp")}</td>
-                  <td className="px-3 py-2 text-right">{fmtXrd(r.depthXrd)}</td>
+                  <td className="px-3 py-2 text-right">
+                    {fmtXrd(r.depthXrd)}
+                    {r.depthChange7dPct !== null && (
+                      <span className="ml-1 text-[10px] text-muted-foreground" title="Depth change vs 7 days earlier">
+                        ({fmtSigned(r.depthChange7dPct, "%")})
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right" title={r.volume7dXrd === null && r.venue === "DefiPlaza" ? "Not reported by DefiPlaza's API" : undefined}>
                     {fmtXrd(r.volume7dXrd)}
                   </td>
@@ -114,6 +121,7 @@ function AssetTable({ assets }: { assets: YieldAssetRow[] }) {
             <th className="px-3 py-2 text-right font-medium">7d Δ</th>
             <th className="px-3 py-2 text-right font-medium" title="Price in XRD × DefiLlama XRD/USD">USD</th>
             <th className="px-3 py-2 text-right font-medium">7d volume (XRD)</th>
+            <th className="px-3 py-2 text-right font-medium" title="Astrolescent aggregate TVL in USD: the input to the $1,000 liquidity floor">Agg. TVL (USD)</th>
           </tr>
         </thead>
         <tbody>
@@ -132,6 +140,9 @@ function AssetTable({ assets }: { assets: YieldAssetRow[] }) {
               <td className="px-3 py-2 text-right text-xs text-muted-foreground">{fmtSigned(a.priceChange7dPct, "%")}</td>
               <td className="px-3 py-2 text-right">{a.priceUsd === null ? "—" : `$${a.priceUsd < 1 ? a.priceUsd.toPrecision(3) : a.priceUsd.toFixed(2)}`}</td>
               <td className="px-3 py-2 text-right">{fmtXrd(a.volume7dXrd)}</td>
+              <td className="px-3 py-2 text-right text-muted-foreground">
+                {a.aggregateTvlUsd === null ? "—" : `$${Math.round(a.aggregateTvlUsd).toLocaleString()}`}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -204,6 +215,12 @@ export default function YieldsPage() {
             returnLabel="ALR"
           />
 
+          <p className="text-xs text-muted-foreground">
+            Pool floor: {view.excluded.rowsBelowDepthFloor} row(s) left out because their exit depth is under $1,000
+            {view.excluded.depthFloorXrd !== null && ` (${fmtXrd(view.excluded.depthFloorXrd)} XRD at today's price)`}.
+            {view.excluded.rowsDepthUnknown > 0 && ` ${view.excluded.rowsDepthUnknown} row(s) shown with depth unavailable.`}
+          </p>
+
           <section className="space-y-2">
             <h2 className="text-lg font-semibold">Watchlist assets</h2>
             <AssetTable assets={view.assets} />
@@ -218,7 +235,7 @@ export default function YieldsPage() {
               <ul className="space-y-1 text-sm">
                 {view.kickers.map((k) => (
                   <li key={k.venue}>
-                    <span className="font-medium">{k.venue}</span>: {k.advertised}, paid in {k.paidIn}.{" "}
+                    <span className="font-medium">{k.venue}</span>: {k.advertised}. Paid in: {k.paidIn}.{" "}
                     <span className="text-xs text-muted-foreground">
                       As advertised by the venue on {k.checked}, not checked in the dApp.{" "}
                       <a href={k.source} target="_blank" rel="noopener noreferrer" className="underline">

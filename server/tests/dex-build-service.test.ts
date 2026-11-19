@@ -802,6 +802,8 @@ describe('buildAndPreview — operator deposit switch', () => {
     }
   });
 
+  // If either venue is reopened (its venue-status.ts entry removed), put its
+  // deposit row back in the 'no lock_fee on any path' table above.
   test('exit-only venues: LSULP and Weft deposits are refused before any preview; exits still build', async () => {
     for (const poolAddress of [LSU_POOL_COMPONENT, `weft-v2:${XRD}`]) {
       const gw = lockFeeGw();

@@ -252,8 +252,10 @@ function RotationCard({
 const KIND_LABEL: Record<Holding["kind"], string> = {
   xrd: "Liquid XRD",
   "validator-stake": "Validator stake",
-  lsulp: "LSU Pool (LSULP)",
-  "weft-lending": "Weft V2 lending",
+  // Both venues are excluded from recommendations (server venue-status.ts):
+  // the label says so beside the position, which still shows and can exit.
+  lsulp: "LSU Pool (LSULP) · exit only",
+  "weft-lending": "Weft V2 lending · unverified",
   "pool-lp": "Pool LP",
   unknown: "Unrecognized",
 };

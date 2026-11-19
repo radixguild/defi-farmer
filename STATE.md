@@ -1,11 +1,51 @@
 # State
 
-_Updated 2026-11-15. This is the project's public status page. It changes when the facts
+_Updated 2026-11-19. This is the project's public status page. It changes when the facts
 change, not on a schedule._
 
-## Now (2026-11-15)
+## Now (2026-11-19)
 
-- Live at https://farmer.radixguild.com. Main is at `38441ce`.
+What changed in code with this update. Whether the live site runs it depends on the next
+deploy: a live `/api/status` that carries a `sources` block runs it.
+
+- **DefiPlaza data is back, as its own view.** The old sources were dead:
+  `stats.defiplaza.net/api/pairs` returns 404, and the Gateway path found no pairs (the
+  PlazaDex router keeps them in KeyValueStores) and returned nothing without an error. The
+  farmer now reads `https://radix.defiplaza.net/api/pairs` and serves one row per pair side
+  at `GET /api/defiplaza`. Each return is labelled **ALR** (DefiPlaza's Annualized
+  Liquidity Return: versus holding that side's token, including impermanent loss, can be
+  negative; [definition](https://docs.defiplaza.net/defiplaza/radix/faq)). It is not a fee
+  APR, so these rows are kept out of `/api/opportunities` and the scorer, which treats
+  figures as fee APR and subtracts a modelled IL. The API's `volume` field is always 0 and
+  is not read.
+- **A failed price is "unavailable", not 0 USD.** The pool enricher's per-token price
+  lookup used to return 0 on any failure and cache it, so a pool's TVL quietly shrank. It
+  now returns nothing, the pool gets no TVL (and is not ranked) and the failure is retried
+  on the next pass.
+- **CaviarNine and Weft are no longer recommended.** The CaviarNine DEX app says the DEX "is
+  being sunsetted" and asks users to withdraw their remaining liquidity
+  ([caviarnine.io](https://www.caviarnine.io/), checked 2026-11-19; its remove panel covers
+  LSU Pools too);
+  DefiLlama lists a Weft V2 exploit on 2026-08-30
+  ([defillama.com/hacks](https://defillama.com/hacks)). Their pools, including the
+  CaviarNine LSU Pool, stay scanned and existing positions still show and can be exited,
+  but they are excluded from scoring, `/api/opportunities` and rotation targets. The UI
+  labels them "Sunset · exit only" and "Exploited Aug 2026 · unverified".
+- **Per-source health on `/api/status`.** A `sources` block lists each data source with
+  `ok`, `lastSuccessAt`, `lastErrorAt`, `lastErrorKind` and `lastRows`. A source that
+  answers with zero rows counts as a failure (`empty`). Raw error text stays on the
+  operator route.
+- **Known, not fixed here:** Ociswap's per-token price endpoint (`/prices/<token>`) answered
+  502 for every token tried on 2026-11-19 (XRD, DFP2, ASTRL), while `/tokens/<token>`
+  answered 200. Until the price source changes, pools whose TVL has to be filled from vault
+  balances stay unpriced and unranked, and `/api/status` shows `ociswap-prices` as
+  `price_unavailable`.
+- Unchanged: the pool resolver's pinned-package checks, the deposit switch (#11), the LSULP
+  part-fill refusal (#8) and the sign gate. Nothing new signs, trades or moves funds.
+
+## Previous (2026-11-15)
+
+- Live at https://farmer.radixguild.com. Main was at `38441ce`.
 - The exact commit the live site runs is not recorded. Whether it includes the two changes
   below is unknown.
 - Merged since the 2026-11-06 update:
@@ -24,7 +64,8 @@ change, not on a schedule._
 - Users: still zero recorded (see Users below). Feature work still paused.
 
 > Superseded 2026-11-15: the sections below are kept as written on 2026-11-06 unless marked
-> otherwise. Where they differ from "Now", "Now" is current.
+> otherwise. Where they differ from "Now", "Now" is current. On venues: see "Now" for
+> CaviarNine and Weft.
 
 ## Deployed
 

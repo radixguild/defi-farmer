@@ -15,6 +15,8 @@ import { recordDeposit, closePosition } from './services/position-recorder.js';
 import { readHoldings, isAccountAddress } from './services/holdings.js';
 import { readStakeClaims } from './services/dex/venue-exit.js';
 import { getValidatorBoard } from './services/validator-board.js';
+import { getDefiPlazaView } from './services/defiplaza.js';
+import { getPublicSourceHealth, getSourceHealth } from './services/source-health.js';
 import { GatewayClient } from './services/gateway.js';
 import {
   SESSION_COOKIE,
@@ -239,6 +241,10 @@ function publicAgentStatus(agent: AgentLoop) {
     errorCount: state.errors.length,
     circuitBreaker: state.circuitBreaker,
     pendingTx: state.pendingTx,
+    // Per-source health: ok / last success / last error KIND per source, so a
+    // dead source shows here instead of silently shrinking the index. No raw
+    // failure text (DF-8) — that is on the operator route.
+    sources: getPublicSourceHealth(),
   };
 }
 
@@ -376,7 +382,8 @@ const routes: Route[] = [
     // Operator tier: the full agent state, incl. errors[] and the
     // persist/prune timestamps (what public /api/status returned before DF-8).
     method: 'GET', pattern: '/api/agent/state', tier: 'operator',
-    handler: ({ agent, corsOrigin }) => json(agent.getState(), 200, corsOrigin),
+    handler: ({ agent, corsOrigin }) =>
+      json({ ...agent.getState(), sources: getSourceHealth() }, 200, corsOrigin),
   },
   {
     // Session tier (D4): a signed-in wallet sees ONLY its rows; the operator
@@ -601,6 +608,14 @@ const routes: Route[] = [
         return json({ error: 'Validator board unavailable (upstream)' }, 502, corsOrigin);
       }
     },
+  },
+  {
+    // PUBLIC, read-only: DefiPlaza per-side ALR (IL-inclusive), kept apart
+    // from /api/opportunities on purpose — ALR is not a fee APR and the two
+    // are never ranked in one column. Served from the agent's last refresh.
+    method: 'GET', pattern: '/api/defiplaza',
+    handler: ({ corsOrigin }) =>
+      json(getDefiPlazaView(parseFloat(CONFIG.MIN_POOL_TVL_USD)), 200, corsOrigin),
   },
   {
     method: 'GET', pattern: '/api/opportunities',

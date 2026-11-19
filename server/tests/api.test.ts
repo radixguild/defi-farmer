@@ -4,6 +4,8 @@ import { applySchema, setTestDb } from '../src/db/schema';
 import { startApi, resetRateLimits, clientIpFromXff } from '../src/api';
 import { createSession } from '../src/services/sessions';
 import type { AgentLoop } from '../src/agent/loop';
+import { recordSourceOutcome, resetSourceHealthForTests } from '../src/services/source-health';
+import { refreshDefiPlaza, resetDefiPlazaForTests } from '../src/services/defiplaza';
 
 let testDb: Database;
 
@@ -511,6 +513,73 @@ describe('API kill switch', () => {
     expect(op.status).toBe(200);
     const body = await op.json() as { errors: string[] };
     expect(body.errors).toHaveLength(1);
+  });
+});
+
+describe('API per-source health + DefiPlaza view', () => {
+  beforeEach(() => {
+    resetRateLimits();
+    resetSourceHealthForTests();
+    resetDefiPlazaForTests();
+  });
+
+  test('public /api/status shows per-source health with the kind, not the raw message', async () => {
+    recordSourceOutcome('ociswap', { rows: 300 }, 1000);
+    recordSourceOutcome('defiplaza', { error: new Error('GET https://upstream.example/api returned 404') }, 2000);
+    const res = await fetch(`${BASE}/api/status`);
+    const text = await res.text();
+    const body = JSON.parse(text) as { sources: Record<string, Record<string, unknown>> };
+    expect(body.sources.ociswap).toMatchObject({ ok: true, lastSuccessAt: 1000, lastRows: 300 });
+    expect(body.sources.defiplaza).toMatchObject({ ok: false, lastErrorAt: 2000, lastErrorKind: 'http_status' });
+    expect(body.sources.defiplaza.lastError).toBeUndefined();
+    expect(text).not.toContain('upstream.example');
+  });
+
+  test('operator /api/agent/state carries the raw source error', async () => {
+    recordSourceOutcome('defiplaza', { error: new Error('returned 404') }, 2000);
+    const op = await fetch(`${BASE}/api/agent/state`, {
+      headers: { Authorization: `Bearer ${AUTH_TOKEN}` },
+    });
+    const body = await op.json() as { sources: Record<string, { lastError: string }> };
+    expect(body.sources.defiplaza.lastError).toBe('returned 404');
+  });
+
+  test('GET /api/defiplaza is public, labelled ALR, and separate from opportunities', async () => {
+    await refreshDefiPlaza({
+      force: true,
+      now: 5000,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                address: 'component_rdx1pair',
+                baseToken: 'resource_rdx1base',
+                quoteToken: 'resource_rdx1quote',
+                basePool: 'pool_rdx1base',
+                quotePool: 'pool_rdx1quote',
+                baseAPY: 0.1,
+                quoteAPY: -0.02,
+                baseTVL: 100,
+                quoteTVL: 200,
+                tvlUSD: 50_000,
+                volume: 0,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    });
+    const res = await fetch(`${BASE}/api/defiplaza`);
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      returnType: string; fetchedAt: number; rows: Array<{ side: string; alrPct: number }>;
+    };
+    expect(body.returnType).toBe('ALR');
+    expect(body.fetchedAt).toBe(5000);
+    expect(body.rows.map((r) => r.side)).toEqual(['base', 'quote']);
+    expect(body.rows[0].alrPct).toBeCloseTo(10);
+    expect(body.rows[1].alrPct).toBeCloseTo(-2);
   });
 });
 

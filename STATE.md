@@ -30,7 +30,10 @@ deploy: a live `/api/status` that carries a `sources` block runs it.
   ([defillama.com/hacks](https://defillama.com/hacks)). Their pools, including the
   CaviarNine LSU Pool, stay scanned and existing positions still show and can be exited,
   but they are excluded from scoring, `/api/opportunities` and rotation targets. The UI
-  labels them "Sunset · exit only" and "Exploited Aug 2026 · unverified".
+  labels them "Sunset · exit only" and "Exploited Aug 2026 · unverified". The sign gate also
+  refuses new LSULP and Weft deposits (`POST /api/dex/build`), before any Gateway read;
+  their exits build as before. The operator deposit switch (#11) covers LP pool kinds only,
+  so this closes the single-sided venues it does not reach.
 - **Per-source health on `/api/status`.** A `sources` block lists each data source with
   `ok`, `lastSuccessAt`, `lastErrorAt`, `lastErrorKind` and `lastRows`. A source that
   answers with zero rows counts as a failure (`empty`). Raw error text stays on the

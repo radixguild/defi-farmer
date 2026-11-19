@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import {
   resolveFee, isShortagePanic, posNum, deriveRange, multipleToSteps, DexBuildError,
-  buildAndPreview, poolInfo,
+  buildAndPreview, poolInfo, venueDepositRefusal,
 } from '../src/services/dex/build-service';
 import { CONFIG, DEPOSIT_SWITCH_ENV, type PinnedPoolKind } from '../src/config';
 import {
@@ -549,8 +549,6 @@ describe('buildAndPreview — no lock_fee on any path', () => {
     ['caviarnine_quantaswap withdraw', { action: 'withdraw', account: acct, poolAddress: LF_QUANTA, localId: EXIT_CLAIM_ID }],
     ['defiplaza_pair withdraw', { action: 'withdraw', account: acct, poolAddress: LF_PLAZA, lpToken: LF_PLAZA_QUOTE_LP, lpAmount: '1' }],
     ['native stake deposit', { action: 'deposit', account: acct, poolAddress: XRD_STAKING_ADDRESS, amountX: '100' }],
-    ['weft supply deposit', { action: 'deposit', account: acct, poolAddress: `weft-v2:${XRD}`, amountX: '100' }],
-    ['lsulp deposit', { action: 'deposit', account: acct, poolAddress: LSU_POOL_COMPONENT, amountX: '100' }],
     ['native unstake', { action: 'withdraw', account: acct, poolAddress: XRD_STAKING_ADDRESS, validator: EXIT_VALIDATOR, lpAmount: '1' }],
     ['native claim', { action: 'claim', account: acct, poolAddress: XRD_STAKING_ADDRESS, validator: EXIT_VALIDATOR, localId: EXIT_CLAIM_ID }],
     ['weft supply withdraw', { action: 'withdraw', account: acct, poolAddress: `weft-v2:${XRD}`, lpAmount: '1' }],
@@ -802,6 +800,30 @@ describe('buildAndPreview — operator deposit switch', () => {
         expect((await buildAndPreview(lockFeeGw(), withdraws[kind])).preview.ok).toBe(true);
       }
     }
+  });
+
+  test('exit-only venues: LSULP and Weft deposits are refused before any preview; exits still build', async () => {
+    for (const poolAddress of [LSU_POOL_COMPONENT, `weft-v2:${XRD}`]) {
+      const gw = lockFeeGw();
+      const req = buildAndPreview(gw, { action: 'deposit', account: acct, poolAddress, amountX: '100' });
+      await expect(req).rejects.toBeInstanceOf(DexBuildError);
+      await expect(req).rejects.toThrow(/deposits into this venue are closed \((lsulp: exit-only|weft_lending: unverified)\)/);
+      expect(gw.previewed).toEqual([]);
+    }
+    expect(
+      (await buildAndPreview(lockFeeGw(), { action: 'withdraw', account: acct, poolAddress: LSU_POOL_COMPONENT, lpAmount: '1' })).preview.ok,
+    ).toBe(true);
+    expect(
+      (await buildAndPreview(lockFeeGw(), { action: 'withdraw', account: acct, poolAddress: `weft-v2:${XRD}`, lpAmount: '1' })).preview.ok,
+    ).toBe(true);
+  });
+
+  test('poolInfo flags LSULP and Weft as paused for deposits; native staking stays open', async () => {
+    expect((await poolInfo(lockFeeGw(), LSU_POOL_COMPONENT)).depositsPaused).toBe(true);
+    expect((await poolInfo(lockFeeGw(), `weft-v2:${XRD}`)).depositsPaused).toBe(true);
+    expect((await poolInfo(lockFeeGw(), XRD_STAKING_ADDRESS)).depositsPaused).toBeUndefined();
+    expect(venueDepositRefusal('native_stake')).toBeNull();
+    expect(venueDepositRefusal('lsulp')).toMatch(/caviarnine\.io/);
   });
 
   test('single-sided venue deposits are outside the switch', async () => {

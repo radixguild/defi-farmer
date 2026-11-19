@@ -197,3 +197,65 @@ export interface HoldingsResult {
   xrdValueTotal: number;
   unconvertibleCount: number;
 }
+
+// ─── Radix-wide yield view (GET /api/yields) ──────────────────────────────────
+// Mirrors server/src/services/yield-view.ts. Every null means "unavailable",
+// never zero. Returns are split by type and must never be ranked together.
+
+export type YieldAssetFlag = "meme" | "bridge" | "off_peg" | "price_disagree" | "below_floor" | "no_price";
+export type YieldReturnType = "staking_apy" | "fee_apr" | "alr";
+
+export interface YieldAssetRow {
+  resource: string;
+  symbol: string;
+  priceXrd: number | null;
+  priceXrdOciswap: number | null;
+  divergencePct: number | null;
+  priceUsd: number | null;
+  aggregateTvlUsd: number | null;
+  volume7dXrd: number | null;
+  bridgeRoute: string | null;
+  flags: YieldAssetFlag[];
+  priceChange7dPct: number | null;
+}
+
+export interface YieldRowData {
+  key: string;
+  venue: string;
+  pool: string;
+  label: string;
+  returnType: YieldReturnType;
+  returnPct: number;
+  returnNote: string;
+  depthXrd: number | null;
+  volume7dXrd: number | null;
+  fees7dXrd: number | null;
+  flags: Array<YieldAssetFlag | "outlier">;
+  returnChange7dPp: number | null;
+  depthChange7dPct: number | null;
+}
+
+export interface YieldKicker {
+  venue: string;
+  paidIn: string;
+  advertised: string;
+  source: string;
+  checked: string;
+  status: "unverified";
+}
+
+export interface YieldView {
+  generatedAt: number | null;
+  banner: {
+    xrdUsd: number | null;
+    chainTvlUsd: number | null;
+    chainTvlXrd: number | null;
+    note: string;
+    noteSource: string;
+  };
+  rules: string[];
+  assets: YieldAssetRow[];
+  sections: { staking: YieldRowData[]; feeApr: YieldRowData[]; alr: YieldRowData[] };
+  kickers: YieldKicker[];
+  excluded: { belowFloorAssets: string[]; rowsBelowDepthFloor: number };
+}

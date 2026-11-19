@@ -1,0 +1,34 @@
+{
+  "_doc": "Yield-view watchlist (docs/design/radix-yield-view.md). Config, not code: edit this file to add or drop an asset. Keyed by resource address, never by symbol (two resources call themselves XRD). Tags: meme, stable, bridge (with bridgeRoute). Starting set 2026-11-19: the assets with both liquidity and volume on Astrolescent.",
+  "assets": [
+    { "resource": "resource_rdx1tknxxxxxxxxxradxrdxxxxxxxxx009923554798xxxxxxxxxradxrd", "symbol": "XRD", "tags": [] },
+    { "resource": "resource_rdx1t42hpqvsk4t42l6aw09hwphd2axvetp6gvas9ztue0p30f4hzdwxrp", "symbol": "DCKS", "aka": ["REDDICKS"], "tags": ["meme"] },
+    { "resource": "resource_rdx1t4kc5ljyrwlxvg54s6gnctt7nwwgx89h9r2gvrpm369s23yhzyyzlx", "symbol": "WOWO", "tags": ["meme"] },
+    { "resource": "resource_rdx1thxj9m87sn5cc9ehgp9qxp6vzeqxtce90xm5cp33373tclyp4et4gv", "symbol": "hUSDC", "tags": ["stable", "bridge"], "bridgeRoute": "Hyperlane" },
+    { "resource": "resource_rdx1t4upr78guuapv5ept7d7ptekk9mqhy605zgms33mcszen8l9fac8vf", "symbol": "xUSDC", "tags": ["stable", "bridge"], "bridgeRoute": "Instabridge" },
+    { "resource": "resource_rdx1t5ywq4c6nd2lxkemkv4uzt8v7x7smjcguzq5sgafwtasa6luq7fclq", "symbol": "DFP2", "tags": [] },
+    { "resource": "resource_rdx1t4tjx4g3qzd98nayqxm7qdpj0a0u8ns6a0jrchq49dyfevgh6u0gj3", "symbol": "ASTRL", "tags": [] }
+  ],
+  "kickers": [
+    {
+      "venue": "DefiPlaza validator",
+      "paidIn": "DFP2",
+      "advertised": "8.6% APY for XRD stakers, paid weekly in DFP2 LP tokens",
+      "source": "https://defiplaza.net/rewards",
+      "checked": "2026-11-19",
+      "status": "unverified"
+    },
+    {
+      "venue": "Astrolescent validator",
+      "paidIn": "ASTRL",
+      "advertised": "Validator staking 1% + 4.7% XRD",
+      "source": "https://astrolescent.com/rewards",
+      "checked": "2026-11-19",
+      "status": "unverified"
+    }
+  ],
+  "chainNote": {
+    "text": "Thin market. The Radix Foundation said on 28 Apr 2026 that market making on the main exchanges listing XRD was pre-funded through September, with an option to extend; whether it was extended is not known here. The same post says Radix Rewards were distributed and are no longer hosted by the Foundation.",
+    "source": "https://www.radixdlt.com/blog/foundation-update-moving-to-maintenance-mode"
+  }
+}

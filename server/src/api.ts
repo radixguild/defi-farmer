@@ -16,6 +16,7 @@ import { readHoldings, isAccountAddress } from './services/holdings.js';
 import { readStakeClaims } from './services/dex/venue-exit.js';
 import { getValidatorBoard } from './services/validator-board.js';
 import { getDefiPlazaView } from './services/defiplaza.js';
+import { getYieldView } from './services/yield-view.js';
 import { getPublicSourceHealth, getSourceHealth } from './services/source-health.js';
 import { GatewayClient } from './services/gateway.js';
 import {
@@ -616,6 +617,13 @@ const routes: Route[] = [
     method: 'GET', pattern: '/api/defiplaza',
     handler: ({ corsOrigin }) =>
       json(getDefiPlazaView(parseFloat(CONFIG.MIN_POOL_TVL_USD)), 200, corsOrigin),
+  },
+  {
+    // PUBLIC, read-only: the Radix-wide yield view (docs/design/radix-yield-view.md).
+    // Returns by type in separate sections, all in XRD; served from the agent's
+    // last refresh.
+    method: 'GET', pattern: '/api/yields',
+    handler: ({ corsOrigin }) => json(getYieldView(), 200, corsOrigin),
   },
   {
     method: 'GET', pattern: '/api/opportunities',

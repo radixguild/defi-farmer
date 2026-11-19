@@ -106,6 +106,16 @@ export function applySchema(target: Database): void {
     CREATE INDEX IF NOT EXISTS idx_rotation_log_status ON rotation_log(status, proposed_at);
 
     -- ROLA sessions. Raw tokens are never stored — only sha256(token).
+    -- Yield view daily snapshot (docs/design/radix-yield-view.md): one value
+    -- per UTC day per (kind, key), so the page can show a 7-day change.
+    CREATE TABLE IF NOT EXISTS yield_snapshots (
+      day TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value REAL NOT NULL,
+      PRIMARY KEY (kind, key, day)
+    );
+
     CREATE TABLE IF NOT EXISTS sessions (
       token_hash TEXT PRIMARY KEY,
       user_address TEXT NOT NULL,

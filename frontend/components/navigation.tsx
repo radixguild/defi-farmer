@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Compass, BarChart3, Settings, ShieldCheck, Wallet, Gift } from "lucide-react";
+import { Home, Compass, BarChart3, Settings, ShieldCheck, Wallet, Gift, Sprout } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { isGiftPageLive } from "@/lib/gift";
@@ -10,6 +10,7 @@ import { isGiftPageLive } from "@/lib/gift";
 const baseNavItems = [
   { href: "/", label: "Home", icon: Home },
   { href: "/discover", label: "Discover", icon: Compass },
+  { href: "/yields", label: "Yields", icon: Sprout },
   { href: "/validators", label: "Validators", icon: ShieldCheck },
   { href: "/positions", label: "Positions", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },

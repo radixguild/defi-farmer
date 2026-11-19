@@ -15,11 +15,13 @@ import type { ScoredPool } from '../services/scorer.js';
 import { RotationManager } from '../services/rotation.js';
 import { scanOciswap, getXrdUsdPrice } from '../services/ociswap.js';
 import { scanCaviarNine } from '../services/caviarnine.js';
-import { scanDefiPlaza } from '../services/defiplaza.js';
+import { refreshDefiPlaza } from '../services/defiplaza.js';
 import { scanStaking } from '../services/staking.js';
 import { scanLsuPool } from '../services/lsu-pool.js';
 import { scanWeftLending } from '../services/weft.js';
-import { enrichPools } from '../services/pool-enricher.js';
+import { enrichPools, fetchSymbols } from '../services/pool-enricher.js';
+import { recordSourceOk, recordSourceError, recordSourceOutcome } from '../services/source-health.js';
+import { splitDiscoverable } from '../services/venue-status.js';
 import { getDb } from '../db/schema.js';
 import { pruneOldData } from '../services/data-tracker.js';
 import type { Position } from '../db/schema.js';
@@ -215,7 +217,13 @@ export class AgentLoop {
         this.state.lastPersist = Date.now();
       }
       const positions = this.getPositions();
-      scored = this.scorer.scoreAll(rawPools, positions);
+      // Exit-only / unverified venues (services/venue-status) stay scanned —
+      // snapshots and holdings keep working — but are never recommended.
+      const { discoverable, excluded } = splitDiscoverable(rawPools);
+      if (excluded.length > 0) {
+        console.log(`[agent] Not recommending ${excluded.length} pool(s) from exit-only/unverified venues`);
+      }
+      scored = this.scorer.scoreAll(discoverable, positions);
       if (persist) this.logScores(scored);
     } catch (err) {
       console.error(`[agent] Score/log error: ${(err as Error).message}`);
@@ -261,10 +269,14 @@ export class AgentLoop {
       // the DEX pools. A failed price lookup yields 0, which the staking
       // scanner reports as $0 TVL rather than inventing a figure.
       const xrdUsd = await getXrdUsdPrice().catch(() => 0);
+      if (xrdUsd > 0) recordSourceOk('xrd-usd', 1);
+      else recordSourceError('xrd-usd', 'price_unavailable', 'XRD/USD spot price unavailable');
+      // DefiPlaza is NOT in this list: its pairs API reports ALR (IL-inclusive),
+      // which the scorer would net IL out of a second time. It refreshes its own
+      // read-only snapshot below (GET /api/defiplaza) and never reaches scoring.
       const scanResults = await Promise.allSettled([
         scanOciswap(this.gateway),
         scanCaviarNine(this.gateway),
-        scanDefiPlaza(this.gateway),
         // IL-free venues. Without these the index contains only volatile LP
         // pairs — the one category that is structurally unprofitable on Radix
         // right now — so "best opportunities" could never be true. These are
@@ -273,20 +285,23 @@ export class AgentLoop {
         scanLsuPool(this.gateway, xrdUsd),
         scanWeftLending(this.gateway, xrdUsd),
       ]);
-      const scanLabels = [
-        'Ociswap',
-        'CaviarNine',
-        'DefiPlaza',
-        'XRD staking',
-        'CaviarNine LSU Pool',
-        'Weft V2 lending',
-      ];
+      // Source-health keys (shown per source on /api/status).
+      const scanSources = ['ociswap', 'caviarnine', 'xrd-staking', 'caviarnine-lsu-pool', 'weft'];
       const rawPools: PoolInfo[] = [];
       for (let i = 0; i < scanResults.length; i++) {
         const r = scanResults[i];
-        if (r.status === 'fulfilled') rawPools.push(...r.value);
-        else console.error(`[pools] ${scanLabels[i]} failed: ${r.reason}`);
+        if (r.status === 'fulfilled') {
+          rawPools.push(...r.value);
+          recordSourceOutcome(scanSources[i], { rows: r.value.length });
+        } else {
+          console.error(`[pools] ${scanSources[i]} failed: ${r.reason}`);
+          recordSourceOutcome(scanSources[i], { error: r.reason });
+        }
       }
+      // Best effort and self-throttled (5 min); records its own source health.
+      await refreshDefiPlaza({ symbols: (addrs) => fetchSymbols(this.gateway, addrs) }).catch((err) =>
+        console.error(`[pools] defiplaza refresh error: ${(err as Error).message}`),
+      );
       this.state.lastScan = Date.now();
       return rawPools;
     } catch (err) {

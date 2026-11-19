@@ -32,8 +32,23 @@ export type AuditStatus =
   | "none"
   | "protocol-native";
 
+/**
+ * Venue status, separate from the audit question: a venue can be unaudited AND
+ * sunset. Set only with a public source (`venueSource`). Mirrors
+ * server/src/services/venue-status.ts, where these venues are excluded from
+ * recommendations (existing positions still show and can be exited).
+ *   - `sunset`    — the team has moved on; exit only.
+ *   - `exploited` — a public incident record exists; status since unverified.
+ */
+export type VenueStatus = "sunset" | "exploited";
+
 export interface AuditInfo {
   status: AuditStatus;
+  venueStatus?: VenueStatus;
+  /** Short badge text for the venue status, e.g. "Sunset · exit only". */
+  venueLabel?: string;
+  /** Public source for the venue status. */
+  venueSource?: string;
   /** Firm name. Only ever set when status === "verified". */
   auditFirm: string;
   /** Report URL, verified to resolve. Only set when status === "verified". */
@@ -64,8 +79,11 @@ const PROTOCOL_AUDITS: Record<string, AuditInfo> = {
     auditUrl: "",
     auditDate: "",
     protocolUrl: "https://caviarnine.com",
+    venueStatus: "sunset",
+    venueLabel: "Sunset · exit only",
+    venueSource: "https://caviarnine.com",
     custodyDisclosure:
-      "We have not verified an audit or admin-key setup for CaviarNine. Check with the protocol before depositing.",
+      "Sunset: CaviarNine's site says the team now builds Cantex on Canton (checked 19 Nov 2026). The farmer no longer recommends CaviarNine pools or its LSU Pool; existing positions still show and can be exited. We have not verified an audit or admin-key setup.",
     protocolLabel: "CaviarNine",
   },
   defiplaza: {
@@ -84,8 +102,11 @@ const PROTOCOL_AUDITS: Record<string, AuditInfo> = {
     auditUrl: "",
     auditDate: "",
     protocolUrl: "https://weft.finance",
+    venueStatus: "exploited",
+    venueLabel: "Exploited Aug 2026 · unverified",
+    venueSource: "https://defillama.com/hacks",
     custodyDisclosure:
-      "We have not verified an audit or admin-key setup for Weft. Lending markets generally carry upgrade and pause authority — check with the protocol before depositing.",
+      "Exploited: DefiLlama lists Weft V2 on 30 Aug 2026 (spot price manipulation). Its status since then is unverified. The farmer no longer recommends Weft; existing positions still show and can be exited.",
     protocolLabel: "Weft",
   },
   radix: {

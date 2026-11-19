@@ -28,8 +28,15 @@ export function AuditBadge({
 }: AuditBadgeProps) {
   const info = getAuditInfo(protocol);
 
-  const tone =
-    info.status === "verified"
+  // Venue status outranks the audit state: "sunset"/"exploited" is the thing a
+  // user must see first, whatever the audit position.
+  const tone = info.venueStatus
+    ? {
+        text: "text-loss-red",
+        icon: ShieldAlert,
+        label: info.venueLabel ?? "Exit only",
+      }
+    : info.status === "verified"
       ? {
           text: "text-profit-green",
           icon: ShieldCheck,
@@ -87,6 +94,16 @@ export function AuditBadge({
             className="text-xs text-muted-foreground underline mt-1 inline-block"
           >
             Read audit · {info.auditDate}
+          </a>
+        )}
+        {info.venueSource && (
+          <a
+            href={info.venueSource}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-muted-foreground underline mt-1 mr-3 inline-block"
+          >
+            Source
           </a>
         )}
         {info.status !== "verified" && info.protocolUrl && (

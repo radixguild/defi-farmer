@@ -149,3 +149,63 @@ describe('enrichPools', () => {
     expect(out[0].risk?.source).toBe('live'); // risk still attached
   });
 });
+
+// ─── tokenUsdPrice: a failed price is null ("unavailable"), never 0 USD ───────
+import { tokenUsdPrice, clearPriceCacheForTests } from '../src/services/pool-enricher';
+
+describe('tokenUsdPrice', () => {
+  const T = 'resource_rdx1t4upr78guuapv5ept7d7ptekk9mqhy605zgms33mcszen8l9fac8vf';
+
+  test('returns the price when Ociswap answers', async () => {
+    clearPriceCacheForTests();
+    const usd = await tokenUsdPrice(T, async () =>
+      new Response(JSON.stringify({ price: { usd: '0.95' } }), { status: 200 }),
+    );
+    expect(usd).toBeCloseTo(0.95);
+  });
+
+  test('a non-2xx, a throw, a missing or a zero price all give null, not 0', async () => {
+    const cases: Array<() => Promise<Response>> = [
+      async () => new Response('no', { status: 502 }),
+      async () => {
+        throw new Error('network down');
+      },
+      async () => new Response(JSON.stringify({}), { status: 200 }),
+      async () => new Response(JSON.stringify({ price: { usd: '0' } }), { status: 200 }),
+      async () => new Response(JSON.stringify({ price: { usd: 'NaN' } }), { status: 200 }),
+      async () => new Response('<html>', { status: 200 }),
+    ];
+    for (const f of cases) {
+      clearPriceCacheForTests();
+      expect(await tokenUsdPrice(T, f)).toBeNull();
+    }
+  });
+
+  test('a failure is not cached: the next call fetches again', async () => {
+    clearPriceCacheForTests();
+    let calls = 0;
+    const failing = async () => {
+      calls++;
+      return new Response('no', { status: 503 });
+    };
+    expect(await tokenUsdPrice(T, failing)).toBeNull();
+    const usd = await tokenUsdPrice(T, async () => {
+      calls++;
+      return new Response(JSON.stringify({ price: { usd: '2' } }), { status: 200 });
+    });
+    expect(usd).toBe(2);
+    expect(calls).toBe(2);
+  });
+
+  test('a real price is cached', async () => {
+    clearPriceCacheForTests();
+    let calls = 0;
+    const f = async () => {
+      calls++;
+      return new Response(JSON.stringify({ price: { usd: '3' } }), { status: 200 });
+    };
+    await tokenUsdPrice(T, f);
+    await tokenUsdPrice(T, f);
+    expect(calls).toBe(1);
+  });
+});

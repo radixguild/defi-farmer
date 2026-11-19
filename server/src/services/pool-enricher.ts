@@ -17,11 +17,14 @@ import { resilientFetch } from './gateway.js';
 import { resolvePool, type ResolvedPool } from './dex/pool-resolver.js';
 import { getPairRisk, type PairRisk } from './price-feed.js';
 import { expectedIlPctForKind } from './calculators.js';
+import { recordSourceError, recordSourceOk } from './source-health.js';
 
 const OCISWAP_API = 'https://api.ociswap.com';
 const GW_BATCH = 20; // /state/entity/details address cap
 const PRICE_TTL_MS = 60 * 60 * 1000;
 const SQRT365 = Math.sqrt(365);
+/// Source-health key for the Ociswap per-token price lookups below.
+export const PRICE_SOURCE = 'ociswap-prices';
 
 /// Skeptical prior when the price feed has no usable history: 100% annualized
 /// per-token vol, uncorrelated → σ_rel = 100%, E[IL] = −12.5%/yr.
@@ -156,7 +159,7 @@ export async function enrichPools(
 /// Token symbols are immutable — cache forever.
 const symbolCache = new Map<string, string>();
 
-async function fetchSymbols(gw: GatewayClient, addrs: string[]): Promise<Map<string, string>> {
+export async function fetchSymbols(gw: GatewayClient, addrs: string[]): Promise<Map<string, string>> {
   const missing = addrs.filter((a) => !symbolCache.has(a));
   for (let i = 0; i < missing.length; i += GW_BATCH) {
     const res = await gw.entityDetailsGlobal(missing.slice(i, i + GW_BATCH), {
@@ -172,21 +175,32 @@ async function fetchSymbols(gw: GatewayClient, addrs: string[]): Promise<Map<str
 
 const priceCache = new Map<string, { at: number; usd: number }>();
 
-async function tokenUsdPrice(token: string): Promise<number> {
+/// Spot USD price for a token, or null when it cannot be read. A failed fetch,
+/// a non-2xx answer, or a missing/zero/non-numeric price all give null — never
+/// 0, which used to make a token "contribute nothing" and quietly shrink a
+/// pool's TVL. Only real prices are cached, so a failure is retried next pass.
+export async function tokenUsdPrice(
+  token: string,
+  fetchFn: (url: string) => Promise<Response> = resilientFetch,
+): Promise<number | null> {
   const cached = priceCache.get(token);
   if (cached && Date.now() - cached.at < PRICE_TTL_MS) return cached.usd;
-  let usd = 0;
   try {
-    const resp = await resilientFetch(`${OCISWAP_API}/prices/${token}`);
-    if (resp.ok) {
-      const j = (await resp.json()) as { price?: { usd?: string } };
-      usd = parseFloat(j.price?.usd ?? '0') || 0;
-    }
+    const resp = await fetchFn(`${OCISWAP_API}/prices/${token}`);
+    if (!resp.ok) return null;
+    const j = (await resp.json()) as { price?: { usd?: string } };
+    const usd = parseFloat(j.price?.usd ?? '');
+    if (!Number.isFinite(usd) || usd <= 0) return null;
+    priceCache.set(token, { at: Date.now(), usd });
+    return usd;
   } catch {
-    // usd stays 0 — the token simply contributes nothing to TVL
+    return null;
   }
-  priceCache.set(token, { at: Date.now(), usd });
-  return usd;
+}
+
+/// Tests only.
+export function clearPriceCacheForTests(): void {
+  priceCache.clear();
 }
 
 /// TVL from a pool component's own vault balances × spot USD prices.
@@ -215,14 +229,35 @@ async function fetchPoolTvls(gw: GatewayClient, addrs: string[]): Promise<Map<st
   }
 
   const uniqueTokens = [...new Set([...balances.values()].flatMap((m) => [...m.keys()]))];
-  const prices = new Map<string, number>();
+  const prices = new Map<string, number | null>();
   await Promise.all(uniqueTokens.map(async (t) => prices.set(t, await tokenUsdPrice(t))));
+  const missing = uniqueTokens.filter((t) => prices.get(t) == null).length;
+  if (missing > 0) {
+    recordSourceError(
+      PRICE_SOURCE,
+      'price_unavailable',
+      `${missing} of ${uniqueTokens.length} token prices unavailable`,
+    );
+  } else if (uniqueTokens.length > 0) {
+    recordSourceOk(PRICE_SOURCE, uniqueTokens.length);
+  }
 
+  // A pool with ANY unpriced token gets no TVL at all (left out of the map):
+  // a partial sum would understate it, and the scorer treats "no TVL" as
+  // "cannot price, do not rank" rather than as a small pool.
   const out = new Map<string, number>();
   for (const [pool, perResource] of balances) {
     let tvl = 0;
-    for (const [token, amount] of perResource) tvl += amount * (prices.get(token) ?? 0);
-    out.set(pool, tvl);
+    let complete = true;
+    for (const [token, amount] of perResource) {
+      const usd = prices.get(token);
+      if (usd == null) {
+        complete = false;
+        break;
+      }
+      tvl += amount * usd;
+    }
+    if (complete) out.set(pool, tvl);
   }
   return out;
 }

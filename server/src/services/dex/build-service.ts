@@ -6,6 +6,7 @@
 /// USER signs; defi-farmer never touches funds. (docs/DEX-INTEGRATION.md.)
 
 import { CONFIG } from '../../config.js';
+import { venueStatus } from '../venue-status.js';
 import type { GatewayClient } from '../gateway.js';
 import {
   resolvePool, refreshDynamic, type ResolvedPool, type PoolKind,
@@ -376,7 +377,16 @@ export async function buildAndPreview(gw: GatewayClient, req: DexBuildRequest): 
   // on the way out.
   const venue = detectVenue(req.poolAddress);
   if (venue) {
-    if (req.action === 'deposit') return buildVenueDepositAndPreview(gw, req, venue);
+    if (req.action === 'deposit') {
+      // Exit-only / unverified venues (services/venue-status.ts): refuse new
+      // deposits here, before any Gateway read, manifest build or preview. The
+      // operator deposit switch (#11) covers LP pool kinds only, so without this
+      // a direct build request could still open an LSULP or Weft position.
+      // Exits below are untouched: a holder must always be able to leave.
+      const closed = venueDepositRefusal(venue);
+      if (closed) throw new DexBuildError(closed);
+      return buildVenueDepositAndPreview(gw, req, venue);
+    }
     return buildVenueExitAndPreview(gw, req, venue);
   }
 
@@ -522,7 +532,21 @@ function venuePoolInfo(address: string, venue: VenueKind): PoolInfoResult {
     tokenX: XRD_RESOURCE,
     tokenY: XRD_RESOURCE,
     lpKind: 'fungible',
+    // Same flag the deposit switch sets, so the UI hides the deposit form.
+    ...(venueDepositRefusal(venue) ? { depositsPaused: true as const } : {}),
   };
+}
+
+/// Why a deposit into this single-sided venue is refused, or null when it is
+/// open. Driven by services/venue-status.ts (CaviarNine incl. its LSU Pool:
+/// exit-only; Weft: unverified). Native staking is never listed there.
+export function venueDepositRefusal(venue: VenueKind): string | null {
+  const status = venueStatus(VENUE_PROTOCOL[venue]);
+  if (!status) return null;
+  return (
+    `deposits into this venue are closed (${venue}: ${status.status}). ${status.note} ` +
+    `Source: ${status.source}`
+  );
 }
 
 /// The native-staking default validator: the board's top REALIZED payer that is

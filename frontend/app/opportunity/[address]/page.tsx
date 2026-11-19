@@ -581,7 +581,7 @@ export default function OpportunityDetailPage() {
 
             {depositsPaused && (
               <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
-                Deposits into this pool are paused.
+                Deposits into this pool are paused or closed. Existing positions can still be exited.
               </p>
             )}
 

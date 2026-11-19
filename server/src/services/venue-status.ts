@@ -5,8 +5,13 @@
 /// but its pools are excluded from discovery (scoring, /api/opportunities,
 /// rotation targets). Only public, linkable sources back each entry.
 ///
-/// This is a recommendation filter, not a deposit guard: it changes nothing in
-/// dex/ (resolver pins, the deposit switch, the sign gate).
+/// It is also a deposit guard for the two single-sided venues (since #14): the
+/// sign gate (dex/build-service.ts `venueDepositRefusal`) refuses new LSULP and
+/// Weft deposits while `caviarnine` / `weft` are listed here. Removing an entry
+/// reopens those deposits, so treat an edit here as a money-path change, and put
+/// that venue's two deposit rows back in the build-service lock_fee test table.
+/// LP pool kinds are not gated here: the resolver pins and the operator deposit
+/// switch (#11) govern those.
 
 export type VenueStatusKind = 'exit-only' | 'unverified';
 

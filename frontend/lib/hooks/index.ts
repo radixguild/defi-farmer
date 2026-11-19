@@ -8,3 +8,4 @@ export { useWallet } from "./use-wallet";
 export { useValidators } from "./use-validators";
 export { useHoldings } from "./use-holdings";
 export { useStakeClaims } from "./use-stake-claims";
+export { useYields } from "./use-yields";

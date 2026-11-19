@@ -35,6 +35,16 @@ deploy: a live `/api/status` that carries a `sources` block runs it.
   `ok`, `lastSuccessAt`, `lastErrorAt`, `lastErrorKind` and `lastRows`. A source that
   answers with zero rows counts as a failure (`empty`). Raw error text stays on the
   operator route.
+- **Radix-wide yield view** (`/yields`, `GET /api/yields`; design note
+  [docs/design/radix-yield-view.md](docs/design/radix-yield-view.md)). Read-only. Three
+  separate tables, each sorted by exit depth in XRD: staking APY (Gateway), Ociswap fee APR
+  (impermanent loss not included) and DefiPlaza ALR (included). Rows only for pairs of
+  watchlist assets (`server/src/config/yield-watchlist.json`, keyed by resource address).
+  Prices follow three rules: Astrolescent price cross-checked against Ociswap (flagged beyond
+  5%, never averaged), a liquidity floor ($1,000 aggregate TVL and non-zero 7-day volume),
+  and XRD throughout with USD once from DefiLlama. Flags: bridge, off peg, meme, prices
+  disagree, outlier. Validator kickers are listed apart, as advertised and unverified. A
+  daily snapshot (`yield_snapshots`) gives 7-day changes once a week of history exists.
 - **Known, not fixed here:** Ociswap's per-token price endpoint (`/prices/<token>`) answered
   502 for every token tried on 2026-11-19 (XRD, DFP2, ASTRL), while `/tokens/<token>`
   answered 200. Until the price source changes, pools whose TVL has to be filled from vault

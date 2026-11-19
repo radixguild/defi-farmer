@@ -191,6 +191,12 @@ export async function refreshDefiPlaza(deps: RefreshDeps = {}): Promise<void> {
   recordSourceOk(DEFIPLAZA_SOURCE, rows.length, now);
 }
 
+/// All side rows from the last good refresh, unfiltered (the yield view applies
+/// its own floors). Copies, so callers cannot mutate the snapshot.
+export function getDefiPlazaRows(): DefiPlazaSideRow[] {
+  return (latest?.rows ?? []).map((r) => ({ ...r }));
+}
+
 export interface DefiPlazaView {
   source: string;
   returnType: 'ALR';

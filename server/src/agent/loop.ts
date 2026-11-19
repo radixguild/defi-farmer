@@ -22,6 +22,7 @@ import { scanWeftLending } from '../services/weft.js';
 import { enrichPools, fetchSymbols } from '../services/pool-enricher.js';
 import { recordSourceOk, recordSourceError, recordSourceOutcome } from '../services/source-health.js';
 import { splitDiscoverable } from '../services/venue-status.js';
+import { refreshYieldView } from '../services/yield-view.js';
 import { getDb } from '../db/schema.js';
 import { pruneOldData } from '../services/data-tracker.js';
 import type { Position } from '../db/schema.js';
@@ -302,6 +303,15 @@ export class AgentLoop {
       await refreshDefiPlaza({ symbols: (addrs) => fetchSymbols(this.gateway, addrs) }).catch((err) =>
         console.error(`[pools] defiplaza refresh error: ${(err as Error).message}`),
       );
+      // Radix-wide yield view (GET /api/yields): read-only, self-throttled
+      // (15 min), never feeds scoring. Reuses this tick's staking APY. Not
+      // awaited: a slow source must not delay the tick (the throttle stamp is
+      // set first, so overlapping calls return at once).
+      const staking = rawPools.find((p) => p.yieldKind === 'staking');
+      void refreshYieldView({
+        stakingApyPct: staking && staking.apy > 0 ? staking.apy : null,
+        minDepthUsd: parseFloat(CONFIG.MIN_POOL_TVL_USD),
+      }).catch((err) => console.error(`[pools] yield view refresh error: ${(err as Error).message}`));
       this.state.lastScan = Date.now();
       return rawPools;
     } catch (err) {

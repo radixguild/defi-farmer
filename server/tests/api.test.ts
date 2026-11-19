@@ -583,6 +583,23 @@ describe('API per-source health + DefiPlaza view', () => {
   });
 });
 
+describe('API /api/yields', () => {
+  beforeEach(() => resetRateLimits());
+
+  test('is public and returns the typed sections even before the first refresh', async () => {
+    const res = await fetch(`${BASE}/api/yields`);
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      sections: { staking: unknown[]; feeApr: unknown[]; alr: unknown[] };
+      rules: string[]; kickers: Array<{ status: string }>; banner: { note: string };
+    };
+    expect(Object.keys(body.sections).sort()).toEqual(['alr', 'feeApr', 'staking']);
+    expect(body.rules.length).toBe(5);
+    expect(body.kickers.every((k) => k.status === 'unverified')).toBe(true);
+    expect(body.banner.note).toMatch(/market making/);
+  });
+});
+
 describe('API input validation', () => {
   beforeEach(() => resetRateLimits());
 

@@ -81,9 +81,9 @@ const PROTOCOL_AUDITS: Record<string, AuditInfo> = {
     protocolUrl: "https://caviarnine.com",
     venueStatus: "sunset",
     venueLabel: "Sunset · exit only",
-    venueSource: "https://caviarnine.com",
+    venueSource: "https://www.caviarnine.io/",
     custodyDisclosure:
-      "Sunset: CaviarNine's site says the team now builds Cantex on Canton (checked 19 Nov 2026). The farmer no longer recommends CaviarNine pools or its LSU Pool; existing positions still show and can be exited. We have not verified an audit or admin-key setup.",
+      "Sunset: the CaviarNine DEX app says the DEX is being sunsetted and asks users to withdraw their remaining liquidity in the coming months (checked 19 Nov 2026; its remove panel covers LSU Pools too). The farmer no longer recommends CaviarNine pools or its LSU Pool; existing positions still show and can be exited. We have not verified an audit or admin-key setup.",
     protocolLabel: "CaviarNine",
   },
   defiplaza: {

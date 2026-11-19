@@ -25,9 +25,10 @@ export const VENUE_STATUS: Readonly<Record<string, VenueStatus>> = {
   caviarnine: {
     status: 'exit-only',
     note:
-      'Sunset. CaviarNine says it now builds Cantex on Canton. Existing positions still show ' +
-      'here and can be exited; the farmer no longer recommends new deposits.',
-    source: 'https://caviarnine.com',
+      'Sunset. The CaviarNine DEX app says the DEX is being sunsetted and asks users to withdraw ' +
+      'their remaining liquidity (its remove panel covers LSU Pools too). Existing positions still ' +
+      'show here and can be exited; the farmer no longer recommends new deposits.',
+    source: 'https://www.caviarnine.io/',
     checked: '2026-11-19',
   },
   weft: {

@@ -206,8 +206,9 @@ export interface DefiPlazaView {
 
 export const ALR_NOTE =
   'ALR = DefiPlaza Annualized Liquidity Return per side: the return versus holding that ' +
-  "side's token, including impermanent loss. It can be negative. The API does not state " +
-  'the measurement window. It is not a fee APR; do not compare it with fee APR figures. ' +
+  "side's token, including impermanent loss. It can be negative. This is the figure DefiPlaza's " +
+  'own UI labels "ALR" (baseAPY/quoteAPY); its 7-day ALR is not in this API, and the API does not ' +
+  'state the measurement window. It is not a fee APR; do not compare it with fee APR figures. ' +
   'Source definition: https://docs.defiplaza.net/defiplaza/radix/faq';
 
 export function getDefiPlazaView(floorUsd: number): DefiPlazaView {

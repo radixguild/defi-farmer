@@ -22,8 +22,10 @@ deploy: a live `/api/status` that carries a `sources` block runs it.
   lookup used to return 0 on any failure and cache it, so a pool's TVL quietly shrank. It
   now returns nothing, the pool gets no TVL (and is not ranked) and the failure is retried
   on the next pass.
-- **CaviarNine and Weft are no longer recommended.** CaviarNine's site says the team now
-  builds Cantex on Canton ([caviarnine.com](https://caviarnine.com), checked 2026-11-19);
+- **CaviarNine and Weft are no longer recommended.** The CaviarNine DEX app says the DEX "is
+  being sunsetted" and asks users to withdraw their remaining liquidity
+  ([caviarnine.io](https://www.caviarnine.io/), checked 2026-11-19; its remove panel covers
+  LSU Pools too);
   DefiLlama lists a Weft V2 exploit on 2026-08-30
   ([defillama.com/hacks](https://defillama.com/hacks)). Their pools, including the
   CaviarNine LSU Pool, stay scanned and existing positions still show and can be exited,

@@ -13,7 +13,24 @@ Licence: Apache-2.0 ([LICENSE](LICENSE)). How this public tree came to be:
 ## What it does
 
 - **Scans** Ociswap, CaviarNine (including its LSU Pool), DefiPlaza, native XRD staking and
-  Weft V2 lending through the public Radix Gateway. No private APIs, no keys.
+  Weft V2 lending. The server reads on-ledger data through the Radix Gateway, by default the
+  public `mainnet.radixdlt.com`; `GATEWAY_URL` changes it (sign-in verification in
+  `server/src/services/rola.ts` passes `@radixdlt/rola` the network ID, not `GATEWAY_URL`).
+  The server also calls these third-party HTTP APIs, sending none of them an API key or login:
+  - Ociswap (`api.ociswap.com`): its pool list (TVL, volume, fees, APR, pool prices), XRD
+    and token USD prices, and daily price history for volatility and impermanent-loss
+    estimates. The per-token price endpoint answered 502 for every token tried on
+    2026-11-19; see [STATE.md](STATE.md).
+  - DefiPlaza (`radix.defiplaza.net`): per-side returns (ALR), reserves and TVL of its pairs.
+  - Astrolescent (`api.astrolescent.com`): token prices in XRD, plus per-token aggregate TVL
+    and 7-day volume, for the yield view.
+  - DefiLlama (`coins.llama.fi`, `api.llama.fi`): XRD/USD price and Radix chain TVL, for
+    the yield view.
+- **Limits browser connections** with its Content-Security-Policy: `connect-src`
+  (`frontend/next.config.js`) lists the dapp's own origin, `mainnet.radixdlt.com`,
+  `stokenet.radixdlt.com` and `radix-connect-relay.radixdlt.com`. The comment there says the
+  Radix dApp Toolkit uses the Gateway for transaction status and the relay for mobile wallet
+  connections.
 - **Scores** each opportunity on risk-adjusted yield net of impermanent loss: 7-day APY
   moving average, TVL stability, audit status, diversity and APY provenance
   (`server/src/services/scorer.ts`, `calculators.ts`). CaviarNine and Weft are scanned but

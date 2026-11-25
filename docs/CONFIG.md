@@ -22,7 +22,7 @@ missing required value or a value that fails validation stops the process.
 |---|---|---|---|---|---|
 | `API_AUTH_TOKEN` | `server/src/config.ts:125` | **required** | none | **secret** | Operator Bearer token. The only required value. |
 | `RADIX_NETWORK_ID` | `server/src/config.ts:83` | optional | `1` | public | `1` mainnet, `2` stokenet. |
-| `GATEWAY_URL` | `server/src/config.ts:84` | optional | `https://mainnet.radixdlt.com` | public | |
+| `GATEWAY_URL` | `server/src/config.ts:84` | optional | `https://mainnet.radixdlt.com` | public | Must not carry a credential: the URL goes into logs and Gateway error text (`server/src/services/gateway.ts:176`, `:179`, `:187`), which can reach API responses, and `/api/config` returns it (operator tier, `server/src/api.ts:720`). |
 | `MAX_GAS_XRD` | `server/src/config.ts:92`, `:240` | optional | `10` | public | Decimal `>= 1`, no scientific notation; otherwise startup fails (`:242-246`). |
 | `SCAN_INTERVAL_MS` | `server/src/config.ts:95` | optional | `60000` | public | |
 | `SNAPSHOT_INTERVAL_MS` | `server/src/config.ts:102` | optional | `3600000` | public | Non-negative integer (`:227-231`). |

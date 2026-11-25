@@ -85,9 +85,9 @@ deploy: a live `/api/status` that carries a `sources` block runs it.
 
 Live at https://farmer.radixguild.com since 2026-10-18, a non-custodial advisor on Radix
 mainnet (first deployed in August 2026). The move to a radixguild.com subdomain, dropped on
-2026-10-11, was re-ruled on 2026-10-18. The earlier address,
-`farmer.156-67-219-105.sslip.io`, redirects: on 2026-11-05 (UTC) it answered `301` to the
-same path on `https://farmer.radixguild.com`. It reads public
+2026-10-11, was re-ruled on 2026-10-18. The earlier address
+redirects: on 2026-11-05 (UTC) it answered `301` to the same path on
+`https://farmer.radixguild.com`. It reads public
 ledger and DEX state, scores it, and builds manifests for the connected wallet to review and
 sign. There is no server-side key and no custody (see the [README](README.md)). The deploy
 tooling behind it is not part of this repository.

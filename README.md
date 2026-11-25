@@ -74,9 +74,10 @@ watch list) take the Bearer. Design and decisions:
 
 ## Running it in production
 
-Two loopback-bound processes behind a TLS-terminating reverse proxy (the reference
-deployment uses Caddy): the agent and API (`bun run agent:start`) and the dapp
-(`next start`). Behind the proxy set `TRUST_PROXY=true` and `SESSION_COOKIE_SECURE=true`.
+Two processes behind a TLS-terminating reverse proxy (the reference deployment uses
+Caddy): the agent and API (`bun run agent:start`, loopback by default) and the dapp
+(`next start`; pass `-H 127.0.0.1` so only the proxy can reach it, see
+[docs/DEPLOY.md](docs/DEPLOY.md)). Behind the proxy set `TRUST_PROXY=true` and `SESSION_COOKIE_SECURE=true`.
 `ROLA_EXPECTED_ORIGIN` and the dApp definition must match the deployed origin, and that
 origin must be in the dApp definition's on-chain `claimed_websites`
 (`frontend/public/.well-known/radix.json` must name the same account). The operator's own

@@ -13,7 +13,16 @@ Licence: Apache-2.0 ([LICENSE](LICENSE)). How this public tree came to be:
 ## What it does
 
 - **Scans** Ociswap, CaviarNine (including its LSU Pool), DefiPlaza, native XRD staking and
-  Weft V2 lending through the public Radix Gateway. No private APIs, no keys.
+  Weft V2 lending. On-ledger data is read through the public Radix Gateway; the server also
+  calls these third-party HTTP APIs, sending none of them an API key or login:
+  - Ociswap (`api.ociswap.com`): its pool list (TVL, volume, fees, APR, pool prices), XRD
+    and token USD prices, and daily price history for volatility and impermanent-loss
+    estimates.
+  - DefiPlaza (`radix.defiplaza.net`): per-side returns (ALR), reserves and TVL of its pairs.
+  - Astrolescent (`api.astrolescent.com`): token prices in XRD, aggregate TVL and 7-day
+    volume, for the yield view.
+  - DefiLlama (`coins.llama.fi`, `api.llama.fi`): XRD/USD price and Radix chain TVL, for
+    the yield view.
 - **Scores** each opportunity on risk-adjusted yield net of impermanent loss: 7-day APY
   moving average, TVL stability, audit status, diversity and APY provenance
   (`server/src/services/scorer.ts`, `calculators.ts`). CaviarNine and Weft are scanned but

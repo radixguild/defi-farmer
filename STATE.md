@@ -101,7 +101,8 @@ by Gateway dry-runs, not by a production deposit round trip.
 
 ## Maintained, with feature work paused
 
-The last feature work landed in 2026-08. The repository is kept live and maintained: security
+The last feature work landed in 2026-08, apart from the operator deposit switch (#11) and the
+read-only yield view (#13) recorded above (note added 2026-11-25). The repository is kept live and maintained: security
 fixes, dependency updates, documentation corrections and test improvements (see
 [CONTRIBUTING.md](CONTRIBUTING.md)) land as they come, and the operator's stated reason for
 keeping it running (2026-10-09) is that stablecoin liquidity is expected to return to the venues
@@ -133,5 +134,11 @@ Why it paused:
   under single-sided venues).
 - [docs/SNAPSHOT-CADENCE-PLAN.md](docs/SNAPSHOT-CADENCE-PLAN.md) phases 4 and 5 (index
   re-measure, one-off `VACUUM`) are open.
+- (Added 2026-11-25.) A package pin enables every pool in that package; the deposit switch
+  can refuse deposits per kind or per pool but does not narrow the pin itself
+  ([docs/DEX-INTEGRATION.md](docs/DEX-INTEGRATION.md#pausing-deposits-operator-switch)).
+- (Added 2026-11-25.) The CI dependency audit ignores two frontend advisories, each with a
+  triage note in `.github/workflows/ci.yml`; that file's comment says the job is not a
+  required check.
 - Comments that cite `REVIEW-2026-07-17 Fnn` refer to an internal 2026-07-17 security review
   whose text is not published. The IDs are kept so the code's history stays traceable.

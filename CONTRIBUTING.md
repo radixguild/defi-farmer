@@ -1,6 +1,7 @@
 # Contributing
 
-Feature work is paused (see [STATE.md](STATE.md)). Security fixes, dependency updates,
+Feature work is paused apart from the changes [STATE.md](STATE.md) records (for example the
+read-only yield view, #13). Security fixes, dependency updates,
 documentation corrections and test improvements are welcome. Feature work is not being
 planned; open an issue first so the conversation happens before the code.
 

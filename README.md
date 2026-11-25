@@ -14,9 +14,9 @@ Licence: Apache-2.0 ([LICENSE](LICENSE)). How this public tree came to be:
 
 - **Scans** Ociswap, CaviarNine (including its LSU Pool), DefiPlaza, native XRD staking and
   Weft V2 lending. The server reads on-ledger data through the Radix Gateway, by default the
-  public `mainnet.radixdlt.com`; `GATEWAY_URL` changes it (not for sign-in verification,
-  where the `@radixdlt/rola` library uses its own default for the network). The server also
-  calls these third-party HTTP APIs, sending none of them an API key or login:
+  public `mainnet.radixdlt.com`; `GATEWAY_URL` changes it (sign-in verification in
+  `server/src/services/rola.ts` passes `@radixdlt/rola` the network ID, not `GATEWAY_URL`).
+  The server also calls these third-party HTTP APIs, sending none of them an API key or login:
   - Ociswap (`api.ociswap.com`): its pool list (TVL, volume, fees, APR, pool prices), XRD
     and token USD prices, and daily price history for volatility and impermanent-loss
     estimates. The per-token price endpoint answered 502 for every token tried on

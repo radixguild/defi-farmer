@@ -16,14 +16,17 @@ Licence: Apache-2.0 ([LICENSE](LICENSE)). How this public tree came to be:
   Weft V2 lending through the public Radix Gateway. No private APIs, no keys.
 - **Scores** each opportunity on risk-adjusted yield net of impermanent loss: 7-day APY
   moving average, TVL stability, audit status, diversity and APY provenance
-  (`server/src/services/scorer.ts`, `calculators.ts`).
+  (`server/src/services/scorer.ts`, `calculators.ts`). CaviarNine and Weft are scanned but
+  not scored or recommended, and DefiPlaza returns (ALR) are shown in their own view, not
+  scored; see [STATE.md](STATE.md).
 - **Proposes** rotations and flags exits (APY or TVL collapse). Proposals are shown to the
   operator; the agent never executes anything.
 - **Builds manifests** for five pool kinds (Ociswap Basic and Precision, CaviarNine Weighted
   and QuantaSwap, DefiPlaza) plus staking, LSU-pool and lending exits, and dry-runs every
   one through the Gateway's `/transaction/preview` before the wallet sees it. That preview
   is the sign gate (`server/src/services/dex/preview.ts`): a failing preview cannot be
-  signed.
+  signed. New LSULP and Weft deposits are refused before any dry-run; their exits still
+  build (`server/src/services/dex/build-service.ts`).
 - **Records positions** only from committed transactions it has verified against the
   Gateway (`POST /api/positions {intent_hash}`). Nothing client-asserted is trusted.
 
@@ -40,7 +43,7 @@ anything on your behalf. A change that would add any of those is out of scope he
 | `frontend/` | Next.js 16 App Router (React 19) dapp: Radix dApp Toolkit v2 sign flows, ROLA sign-in, dark mode, same-origin API proxy |
 | `server/` | Bun + TypeScript agent and HTTP API (`Bun.serve`) with SQLite via `bun:sqlite`: scanners, enricher, scorer, Kelly allocator, range optimizer, rotation proposals |
 | `server/src/services/dex/` | The non-custodial builder: runtime pool resolver, manifest builders, concentrated-liquidity math, Gateway dry-run preview |
-| `docs/` | Specs that are still current: [DEX-INTEGRATION](docs/DEX-INTEGRATION.md) (verified mainnet interfaces and math) · [MONETIZATION](docs/MONETIZATION.md) · [PHASE-3.1-DESIGN](docs/PHASE-3.1-DESIGN.md) (auth model) · [SNAPSHOT-CADENCE-PLAN](docs/SNAPSHOT-CADENCE-PLAN.md) · [SPEC-FEE-SPLIT-AND-IL](docs/SPEC-FEE-SPLIT-AND-IL.md) · [YIELD-TOOLS-LANDSCAPE](docs/YIELD-TOOLS-LANDSCAPE.md) |
+| `docs/` | Specs that are still current: [DEX-INTEGRATION](docs/DEX-INTEGRATION.md) (verified mainnet interfaces and math) · [MONETIZATION](docs/MONETIZATION.md) · [PHASE-3.1-DESIGN](docs/PHASE-3.1-DESIGN.md) (auth model) · [SNAPSHOT-CADENCE-PLAN](docs/SNAPSHOT-CADENCE-PLAN.md) · [SPEC-FEE-SPLIT-AND-IL](docs/SPEC-FEE-SPLIT-AND-IL.md) · [YIELD-TOOLS-LANDSCAPE](docs/YIELD-TOOLS-LANDSCAPE.md) · [CONFIG](docs/CONFIG.md) (every env name) · [DEPLOY](docs/DEPLOY.md) (deploy and rollback, draft) · `docs/design/` (design notes) |
 
 ## Quick start
 
@@ -71,17 +74,21 @@ watch list) take the Bearer. Design and decisions:
 
 ## Running it in production
 
-Two loopback-bound processes behind a TLS-terminating reverse proxy (the reference
-deployment uses Caddy): the agent and API (`bun run agent:start`) and the dapp
-(`next start`). Behind the proxy set `TRUST_PROXY=true` and `SESSION_COOKIE_SECURE=true`.
+Two processes behind a TLS-terminating reverse proxy (the reference deployment uses
+Caddy): the agent and API (`bun run agent:start`, loopback by default) and the dapp
+(`next start`; pass `-H 127.0.0.1` so only the proxy can reach it, see
+[docs/DEPLOY.md](docs/DEPLOY.md)). Behind the proxy set `TRUST_PROXY=true` and `SESSION_COOKIE_SECURE=true`.
 `ROLA_EXPECTED_ORIGIN` and the dApp definition must match the deployed origin, and that
 origin must be in the dApp definition's on-chain `claimed_websites`
 (`frontend/public/.well-known/radix.json` must name the same account). The operator's own
-deploy tooling is not part of this repository.
+deploy tooling is not part of this repository. Every env name: [docs/CONFIG.md](docs/CONFIG.md).
+Deploy, verify and rollback steps from the repo contents: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 To pause deposits for a venue kind or a single pool while leaving withdrawals available, set
 `DEX_DEPOSITS_DISABLED_KINDS` and/or `DEX_DEPOSITS_DENY_POOLS` and restart the agent. Syntax,
 scope and failure behaviour: [docs/DEX-INTEGRATION.md](docs/DEX-INTEGRATION.md#pausing-deposits-operator-switch).
+The switch covers LP pool kinds. New LSULP and Weft deposits are refused by the sign gate
+itself; native staking deposits are covered by neither ([STATE.md](STATE.md)).
 
 ## Security
 

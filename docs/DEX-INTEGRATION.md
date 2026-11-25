@@ -90,7 +90,9 @@ change takes effect when the agent process restarts with the new environment.
 
 - **Only deposits are gated.** `withdraw` builds as before, and `POST /api/positions`
   (recording a deposit that was already signed) does not consult the switch. Single-sided
-  venues (native staking, LSULP, Weft) are outside it.
+  venues (native staking, LSULP, Weft) are outside it. New LSULP and Weft deposits are
+  refused separately by the sign gate, exits unchanged (#14, `build-service.ts:380-388`);
+  native staking deposits are gated by neither.
 - **It can only narrow, never widen.** The refusal runs after the pool resolver, so a pool on
   an unpinned or lookalike package is still `unsupported` for deposits and exits alike.
 - **Refusal is a 400 before any manifest is built or previewed.** The error reads

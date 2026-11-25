@@ -15,13 +15,18 @@ port.
 
 ## What runs
 
-Two processes on one machine, both bound to loopback, behind a TLS-terminating reverse
-proxy ([README](../README.md#running-it-in-production)):
+Two processes on one machine, behind a TLS-terminating reverse proxy
+([README](../README.md#running-it-in-production)):
 
 | Process | Started with (from `<app-dir>`) | Script |
 |---|---|---|
 | Agent and API | `bun run agent:start` | `package.json:13` → `server/package.json:9` (`bun run src/index.ts`) |
-| Dapp | `cd frontend && bun run start` | `frontend/package.json:9` (`next start`) |
+| Dapp | `cd frontend && bunx next start -H 127.0.0.1 -p <web-port>` | `frontend/package.json:9` is plain `next start`, with no host or port of its own |
+
+The agent binds loopback by default (`API_HOST`, `server/src/config.ts:124`). Nothing in
+this repo binds the dapp: pass `-H 127.0.0.1 -p <web-port>` as above so that only the
+proxy can reach it. Started as plain `next start`, Next's documented defaults apply (all
+interfaces, port 3000; not run here).
 
 The agent has no build step: Bun runs the TypeScript source. The dapp must be built first.
 The agent's working directory is `server/` (`package.json:13`), so the relative defaults
@@ -44,8 +49,12 @@ The agent's working directory is `server/` (`package.json:13`), so the relative 
 - **Operator step, not in this repo:** write down the commit the machine runs now. That is
   the rollback target. [STATE.md](../STATE.md) records that the live commit has not been
   recorded so far.
-- **Operator step, not in this repo:** copy the SQLite file (`DB_PATH`) and the env files
-  aside. The repo has no backup command.
+- **Operator step, not in this repo:** stop the agent, then copy the SQLite file
+  (`DB_PATH`), its `-wal` and `-shm` files if they exist, and the env files aside. The
+  database runs in WAL mode (`server/src/db/schema.ts:19`), so a copy of the `.db` file
+  alone, taken while the agent is running, can miss committed rows. To copy without
+  stopping the agent, use SQLite's own online backup (`sqlite3 <db-file> ".backup
+  <copy>"`; not run here). The repo has no backup command.
 
 ## 3. Environment
 
@@ -141,5 +150,6 @@ If a check in step 6 fails, or the new build misbehaves:
    baked into it.
 5. Restart both processes and run step 6 again.
 6. Database: the schema changes are additive, so the previous code should still open the
-   newer file (unverified). Restore the copy from step 2 only if the data itself is wrong;
-   rows written since the copy are lost.
+   newer file (unverified). Restore the copy from step 2 only if the data itself is wrong,
+   with the agent stopped, replacing the `.db` file and any `-wal` / `-shm` files beside
+   it; rows written since the copy are lost.

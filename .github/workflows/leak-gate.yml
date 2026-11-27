@@ -1,0 +1,47 @@
+name: leak-gate
+
+# Refuses private material in this public repository: blocklisted terms, home-directory
+# paths, personal commit identities, audit-shaped files, and sdk-run/* or audit/* branches.
+# Fails closed when the PII_BLOCKLIST_JSON secret is missing, except on fork PRs.
+# Details and maintainer steps: .github/LEAK-GATE.md
+
+# Never `pull_request_target`: that would hand the secret to a fork's code.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main, 'sdk-run/**', 'audit/**']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  leak-gate:
+    # The required-check name. Do not rename without updating the branch rule.
+    name: leak gate
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The PR head itself (not the synthetic merge commit), with full history.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: self-test (prove it detects and fails closed)
+        run: node .github/leak-gate.mjs --selftest
+
+      - name: judge the change
+        env:
+          PII_BLOCKLIST_JSON: ${{ secrets.PII_BLOCKLIST_JSON }}
+        run: node .github/leak-gate.mjs

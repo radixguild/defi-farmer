@@ -9,6 +9,7 @@ import {
 } from '../src/services/dex/pool-resolver';
 import { parseDexPackagePins, DEX_PACKAGE_ENV } from '../src/config';
 import type { GatewayClient, GwEntityItem } from '../src/services/gateway';
+import { fungibleItem, xrdOutflow } from './deposit-stub';
 
 const XRD = 'resource_rdx1tknxxxxxxxxxradxrdxxxxxxxxx009923554798xxxxxxxxxradxrd';
 const XWBTC = 'resource_rdx1t580qxc7upat7lww4l2c4jckacafjeudxj5wpjrrct0p3e82sq4y75';
@@ -87,14 +88,15 @@ function stubGw(items: Record<string, GwEntityItem>): GatewayClient & StubGw {
     previews: 0,
     async entityDetailsGlobal(addresses: string[]) {
       gw.calls++;
-      return { items: addresses.map((a) => items[a] ?? ({ address: a } as GwEntityItem)) };
+      const tokens: Record<string, GwEntityItem> = { [XWBTC]: fungibleItem(XWBTC, 8) };
+      return { items: addresses.map((a) => items[a] ?? tokens[a] ?? ({ address: a } as GwEntityItem)) };
     },
     async getCurrentEpoch() {
       return 334_599;
     },
-    async previewTransaction() {
+    async previewTransaction(manifest: string) {
       gw.previews++;
-      return { receipt: { status: 'Succeeded' }, resource_changes: [] };
+      return { receipt: { status: 'Succeeded' }, resource_changes: xrdOutflow(manifest, ACCOUNT) };
     },
   };
   return gw as unknown as GatewayClient & StubGw;
@@ -184,7 +186,8 @@ describe('DF-1 — DefiPlaza tokens must belong to the resolved pair', () => {
 
   test('a pair token as inputToken builds and previews', async () => {
     const r = await buildAndPreview(stubGw(items()), {
-      action: 'deposit', account: ACCOUNT, poolAddress: PLAZA, inputToken: XRD, inputAmount: '1',
+      // 10 XRD: the minimum deposit (deposit-guard.ts MIN_DEPOSIT_XRD).
+      action: 'deposit', account: ACCOUNT, poolAddress: PLAZA, inputToken: XRD, inputAmount: '10',
     });
     expect(r.pool.kind).toBe('defiplaza_pair');
     expect(r.preview.ok).toBe(true);

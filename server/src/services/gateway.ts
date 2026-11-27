@@ -90,6 +90,8 @@ export interface GwEntityItem {
   address: string;
   details?: {
     type?: string;
+    /// FungibleResource only: decimal places the resource allows (0..18).
+    divisibility?: number;
     blueprint_name?: string;
     package_address?: string;
     state?: {

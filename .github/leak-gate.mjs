@@ -15,9 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const SELF = fileURLToPath(import.meta.url);
 const SECRET = 'PII_BLOCKLIST_JSON';
 const CATEGORIES = ['ipv4', 'email', 'phrase', 'chain-address'];
 
@@ -58,7 +56,7 @@ function loadBlocklist(env) {
 // ── content rules ───────────────────────────────────────────────────────────
 // A real home-directory path, or the dash-mangled form some tools make from one.
 const HOME_RES = [
-  /\/Users\/([A-Za-z0-9._-]+)(?=\/|[)"'`]|\s|$)/g,
+  /\/Users\/([A-Za-z0-9._-]+)/g,
   /-Users-([A-Za-z0-9._-]+?)-Projects\b/g,
 ];
 const PLACEHOLDERS = new Set(['you', 'your-name', 'yourname', 'your_name', 'username', 'user', 'name', 'example', 'test', 'ci', 'runner']);
@@ -71,7 +69,7 @@ const CANDIDATES = {
 function scanText(text, blocklist) {
   const hits = new Set();
   for (const re of HOME_RES) {
-    for (const m of text.matchAll(re)) if (!PLACEHOLDERS.has(m[1].toLowerCase())) hits.add('home-path');
+    for (const m of text.matchAll(re)) if (!PLACEHOLDERS.has(m[1].toLowerCase().replace(/\.+$/, ''))) hits.add('home-path');
   }
   if (!blocklist) return hits;
   for (const [category, re] of Object.entries(CANDIDATES)) {
@@ -111,7 +109,7 @@ const SAFE_NAME = /^(?:bigdev|bigdevxrd|radixguild|github|claude(?: [a-z0-9. ]+)
 const git = (cwd, args) => execFileSync('git', ['-c', 'core.quotePath=false', ...args], {
   cwd, encoding: 'utf8', maxBuffer: 512 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
 });
-const DIFF_FLAGS = ['--unified=0', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames', '--src-prefix=a/', '--dst-prefix=b/'];
+const DIFF_FLAGS = ['--text', '--unified=0', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames', '--src-prefix=a/', '--dst-prefix=b/'];
 
 function addedLines(diff, visit) {
   let path = '';
@@ -146,14 +144,20 @@ function run({ cwd, env, tree = false, out = console.log }) {
   const allow = env.LEAK_GATE_AUDIT_ALLOW ? new RegExp(env.LEAK_GATE_AUDIT_ALLOW) : null;
   const findings = new Set();
   const judge = (where, text) => { for (const hit of scanText(text, blocklist)) findings.add(`${where}: ${hit}`); };
+  const hidden = new Map();
+  const label = (path) => {
+    if (scanText(path, blocklist).size === 0) return path;
+    if (!hidden.has(path)) hidden.set(path, `file #${hidden.size + 1} (name withheld)`);
+    return hidden.get(path);
+  };
   const head = git(cwd, ['rev-parse', '--verify', `${env.LEAK_GATE_HEAD || 'HEAD'}^{commit}`]).trim();
 
   if (tree) {
     const empty = git(cwd, ['hash-object', '-t', 'tree', '/dev/null']).trim();
-    addedLines(git(cwd, ['diff', ...DIFF_FLAGS, empty, head]), (p, n, text) => judge(`${p}:${n}`, text));
+    addedLines(git(cwd, ['diff', ...DIFF_FLAGS, empty, head]), (p, n, text) => judge(`${label(p)}:${n}`, text));
     for (const p of addedPaths(cwd, empty, head)) {
       judge('a file path', p);
-      if (isAuditPath(p, allow)) findings.add(`${p}: audit-shaped file`);
+      if (isAuditPath(p, allow)) findings.add(`${label(p)}: audit-shaped file`);
     }
   } else {
     for (const ref of [env.GITHUB_HEAD_REF, env.GITHUB_REF, env.LEAK_GATE_BRANCH]) {
@@ -172,7 +176,9 @@ function run({ cwd, env, tree = false, out = console.log }) {
       return 1;
     }
 
-    const lines = (p, n, text) => judge(`${p}:${n}`, text);
+    if (commits.length === 0) findings.add('nothing to judge: no commits between the base and the head');
+
+    const lines = (p, n, text) => judge(`${label(p)}:${n}`, text);
     const paths = new Set();
     // Net change, then each commit: a line added and later removed is still published.
     addedLines(git(cwd, ['diff', ...DIFF_FLAGS, mergeBase, head]), lines);
@@ -191,17 +197,23 @@ function run({ cwd, env, tree = false, out = console.log }) {
         judge(`commit ${short} message`, row);
         if (PRIVATE_MERGE.test(row)) findings.add(`commit ${short}: merges an sdk-run/* or audit/* branch`);
       }
-      if (parents.trim().includes(' ')) continue; // merge commits: covered by the net change
-      const patch = git(cwd, ['diff-tree', '-p', '-r', '--root', '--no-commit-id', ...DIFF_FLAGS, c]);
-      addedLines(patch, (p, n, text) => judge(`commit ${short} ${p}:${n}`, text));
-      for (const p of git(cwd, ['diff-tree', '-r', '--root', '--no-commit-id', '--no-renames', '--name-only', '--diff-filter=A', '-z', c]).split('\0').filter(Boolean)) paths.add(p);
+      const parentCount = parents.trim().split(' ').filter(Boolean).length;
+      if (parentCount > 2) findings.add(`commit ${short}: a merge of more than two parents cannot be judged`);
+      // For a merge, "remerge" shows only what differs from git's own automatic merge.
+      const show = (...args) => git(cwd, ['show', '--format=', '--root', '--diff-merges=remerge', ...args, c]);
+      addedLines(show('-p', ...DIFF_FLAGS), (p, n, text) => judge(`commit ${short} ${label(p)}:${n}`, text));
+      for (const p of show('--no-renames', '--name-only', '--diff-filter=A', '-z').split('\0').filter(Boolean)) paths.add(p);
     }
     for (const p of paths) {
       judge('a file path', p);
-      if (isAuditPath(p, allow)) findings.add(`${p}: audit-shaped file`);
+      if (isAuditPath(p, allow)) findings.add(`${label(p)}: audit-shaped file`);
     }
     // The PR title and body can become the squash commit message.
-    if (pr) for (const row of `${pr.title ?? ''}\n${pr.body ?? ''}`.split('\n')) judge('pull request title or body', row);
+    // Dependabot quotes upstream release notes: blocklist only there, not the path rule.
+    const bot = pr?.user?.login === 'dependabot[bot]';
+    if (pr) for (const row of `${pr.title ?? ''}\n${pr.body ?? ''}`.split('\n')) {
+      for (const hit of scanText(row, blocklist)) if (!(bot && hit === 'home-path')) findings.add(`pull request title or body: ${hit}`);
+    }
     out(`leak-gate: judged ${commits.length} commit(s), ${paths.size} added file(s)`);
   }
 
@@ -222,7 +234,7 @@ function selftest() {
   ] });
   const handle = { GIT_AUTHOR_NAME: 'bigdev', GIT_AUTHOR_EMAIL: 'bigdev@users.noreply.github.com' };
   const ident = { ...process.env, ...handle, GIT_COMMITTER_NAME: handle.GIT_AUTHOR_NAME, GIT_COMMITTER_EMAIL: handle.GIT_AUTHOR_EMAIL };
-  const g = (...args) => execFileSync('git', ['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args], { cwd: dir, env: ident, encoding: 'utf8' }).trim();
+  const g = (...args) => execFileSync('git', ['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', ...args], { cwd: dir, env: ident, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 }).trim();
   const commit = (path, body) => {
     writeFileSync(join(dir, path), body);
     g('add', '--', path);
@@ -272,6 +284,36 @@ function selftest() {
       return prFrom('o/r')(next);
     });
     check('PR head outside the range blocks', 1, clean, {}, () => prFrom('o/r')('0'.repeat(40)));
+    check('empty range blocks', 1, []);
+    check('push event judges before..head', 1, [['a.txt', `${phrase}\n`]], { LEAK_GATE_BASE: '' }, () => ({ before: base }));
+    check('home path before a colon blocks', 1, [['a.txt', ['', 'Users', 'somebody:3'].join('/') + '\n']]);
+    check('content with a NUL byte is still scanned', 1, [['a.txt', `\0\n${phrase}\n`]]);
+    check('a -diff attribute does not hide content', 1, [['.gitattributes', '*.txt -diff\n'], ['a.txt', `${phrase}\n`]]);
+    check('added in a merge commit then removed blocks', 1, [], {}, () => {
+      const left = commit('l.txt', 'l\n');
+      g('checkout', '-q', '--detach', base);
+      commit('r.txt', 'r\n');
+      g('merge', '-q', '--no-ff', '--no-commit', left);
+      writeFileSync(join(dir, 'm.txt'), `${phrase}\n`);
+      g('add', '--', 'm.txt');
+      g('commit', '-qm', 'merge');
+      g('rm', '-q', 'm.txt');
+      g('commit', '-qm', 'drop');
+      return {};
+    });
+    check('a plain merge passes', 0, [], {}, () => {
+      const left = commit('l.txt', 'l\n');
+      g('checkout', '-q', '--detach', base);
+      commit('r.txt', 'r\n');
+      g('merge', '-q', '--no-ff', '-m', 'merge', left);
+      return {};
+    });
+    g('checkout', '-q', '--detach', base);
+    commit(`${phrase}.txt`, `${phrase}\n`);
+    const printed = [];
+    const code = run({ cwd: dir, env: { PII_BLOCKLIST_JSON: list, LEAK_GATE_BASE: base }, out: (line) => printed.push(line) });
+    if (code !== 1 || printed.join('\n').includes(phrase)) { failed++; console.log('  ✗ a matching file name is printed or passed'); }
+    else console.log('  ✓ a matching file name is never printed');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -279,14 +321,12 @@ function selftest() {
   return failed ? 1 : 0;
 }
 
-if (process.argv[1] === SELF) {
-  try {
-    process.exitCode = process.argv.includes('--selftest')
-      ? selftest()
-      : run({ cwd: process.cwd(), env: process.env, tree: process.argv.includes('--tree') });
-  } catch (err) {
-    // First line only: git's stderr can quote content.
-    console.log(`leak-gate: could not run (${String(err.message).split('\n')[0]})`);
-    process.exitCode = 2;
-  }
+try {
+  process.exitCode = process.argv.includes('--selftest')
+    ? selftest()
+    : run({ cwd: process.cwd(), env: process.env, tree: process.argv.includes('--tree') });
+} catch (err) {
+  // First line only: git's stderr can quote content.
+  console.log(`leak-gate: could not run (${String(err.message).split('\n')[0]})`);
+  process.exitCode = 2;
 }

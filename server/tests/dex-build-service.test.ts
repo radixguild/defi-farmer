@@ -12,6 +12,8 @@ import { XRD_STAKING_ADDRESS } from '../src/services/staking';
 import { WEFT_V2_LENDING_COMPONENT } from '../src/services/weft';
 import { LSU_POOL_COMPONENT, LSULP_RESOURCE } from '../src/services/lsu-pool';
 import { _clearBoardCache } from '../src/services/validator-board';
+import { fungibleItem, xrdOutflow } from './deposit-stub';
+import { _clearDivisibilityCache } from '../src/services/dex/deposit-guard';
 
 const XRD = 'resource_rdx1tknxxxxxxxxxradxrdxxxxxxxxx009923554798xxxxxxxxxradxrd';
 const XWBTC = 'resource_rdx1t580qxc7upat7lww4l2c4jckacafjeudxj5wpjrrct0p3e82sq4y75';
@@ -450,6 +452,33 @@ const lfItems: Record<string, GwEntityItem> = {
   [LF_PLAZA_QUOTE_POOL]: { address: LF_PLAZA_QUOTE_POOL, details: { state: { pool_unit_resource_address: LF_PLAZA_QUOTE_LP } } },
 } as unknown as Record<string, GwEntityItem>;
 
+/// A BasicPool pairing XRD with a whole-units-only token (divisibility 0).
+const LF_BASIC0 = 'component_rdx1cbasiczerodivfixturexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+const LF_BASIC0_NATIVE = 'pool_rdx1cbasiczerodivnativexxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+const LF_BASIC0_LP = 'resource_rdx1tbasiczerodivlpxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+const WHOLE0 = 'resource_rdx1twholeunitsonlyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+lfItems[LF_BASIC0] = {
+  address: LF_BASIC0,
+  details: {
+    blueprint_name: 'BasicPool', package_address: process.env.DEX_PACKAGES_OCISWAP_BASIC,
+    state: { fields: [
+      { field_name: 'x_address', value: WHOLE0 },
+      { field_name: 'y_address', value: XRD },
+      { field_name: 'liquidity_pool', value: LF_BASIC0_NATIVE },
+    ] },
+  },
+} as unknown as GwEntityItem;
+lfItems[LF_BASIC0_NATIVE] = {
+  address: LF_BASIC0_NATIVE, details: { state: { pool_unit_resource_address: LF_BASIC0_LP } },
+} as unknown as GwEntityItem;
+
+/// Token divisibility for the fixtures, as a ledger read would report it.
+const LF_RESOURCES: Record<string, GwEntityItem> = {
+  [XWBTC]: fungibleItem(XWBTC, 8),
+  [XUSDT]: fungibleItem(XUSDT, 6),
+  [WHOLE0]: fungibleItem(WHOLE0, 0),
+};
+
 function lsulpChange(amount: string) {
   return { resource_address: LSULP_RESOURCE, component_entity: { entity_address: EXIT_ACCOUNT }, amount };
 }
@@ -468,7 +497,9 @@ function lockFeeGw(
   verdict: (manifest: string, n: number) => Record<string, unknown> = () => ({ status: 'Succeeded' }),
   changes: (manifest: string) => unknown[] = (m) => {
     const w = m.match(new RegExp(`"withdraw" Address\\("${LSULP_RESOURCE}"\\) Decimal\\("([^"]+)"\\)`));
-    return w ? [{ index: 0, resource_changes: [lsulpChange(`-${w[1]}`)] }] : [];
+    // Deposits: the XRD the manifest withdraws leaves the account (deposit-guard
+    // checks the dry-run's net XRD outflow against the minimum).
+    return w ? [{ index: 0, resource_changes: [lsulpChange(`-${w[1]}`)] }] : xrdOutflow(m, EXIT_ACCOUNT);
   },
 ) {
   const validatorState = {
@@ -511,7 +542,7 @@ function lockFeeGw(
   const gw = {
     previewed: [] as string[],
     async entityDetailsGlobal(addresses: string[]) {
-      return { items: addresses.map((a) => lfItems[a] ?? ({ address: a } as GwEntityItem)) };
+      return { items: addresses.map((a) => lfItems[a] ?? LF_RESOURCES[a] ?? ({ address: a } as GwEntityItem)) };
     },
     async post(path: string, body: unknown) {
       const h = handlers[path];
@@ -898,5 +929,150 @@ describe('buildAndPreview — operator deposit switch', () => {
         expect((await buildAndPreview(lockFeeGw(), withdraws[kind])).preview.ok).toBe(true);
       }
     });
+  });
+});
+
+// ── deposit amount guard: divisibility + minimum (deposit-guard.ts) ──────────
+//
+// Both refusals are 400s raised BEFORE a manifest is built or previewed, so a
+// refused amount never reaches the Gateway dry-run or a wallet. The dry-run
+// minimum (net XRD the account sends) is the second line for ratio pools.
+
+describe('buildAndPreview — deposit amount guard', () => {
+  const acct = EXIT_ACCOUNT;
+  beforeEach(() => {
+    _clearResolverCache();
+    _clearBoardCache();
+    _clearDivisibilityCache();
+  });
+
+  test('zero-divisibility token: a fractional amount is a 400 and nothing is previewed', async () => {
+    const gw = lockFeeGw();
+    const p = buildAndPreview(gw, { action: 'deposit', account: acct, poolAddress: LF_BASIC0, amountX: '1.5', amountY: '10' });
+    await expect(p).rejects.toBeInstanceOf(DexBuildError);
+    await expect(p).rejects.toThrow(/amountX 1\.5 is finer than this token allows \(whole units only\)/);
+    expect(gw.previewed).toEqual([]);
+  });
+
+  test('zero-divisibility token: a whole amount builds, unrounded', async () => {
+    const gw = lockFeeGw();
+    const r = await buildAndPreview(gw, { action: 'deposit', account: acct, poolAddress: LF_BASIC0, amountX: '2', amountY: '10' });
+    expect(r.preview.ok).toBe(true);
+    expect(r.manifest).toContain(`"withdraw" Address("${WHOLE0}") Decimal("2")`);
+  });
+
+  test('8-decimal token: 8 places build, 9 places are refused before the dry-run', async () => {
+    const ok = await buildAndPreview(lockFeeGw(), {
+      action: 'deposit', account: acct, poolAddress: LF_PRECISION,
+      amountX: '0.00000001', amountY: '100', range: { below: 3, above: 3 },
+    });
+    expect(ok.preview.ok).toBe(true);
+    const gw = lockFeeGw();
+    const bad = buildAndPreview(gw, {
+      action: 'deposit', account: acct, poolAddress: LF_PRECISION,
+      amountX: '0.000000001', amountY: '100', range: { below: 3, above: 3 },
+    });
+    await expect(bad).rejects.toThrow(/at most 8 decimal places/);
+    expect(gw.previewed).toEqual([]);
+  });
+
+  test('DefiPlaza co-liquidity leg is checked against the OTHER token', async () => {
+    const gw = lockFeeGw();
+    const p = buildAndPreview(gw, {
+      action: 'deposit', account: acct, poolAddress: LF_PLAZA, inputToken: XRD, inputAmount: '100', coAmount: '0.000000001',
+    });
+    await expect(p).rejects.toThrow(/coAmount 0\.000000001 is finer/);
+    expect(gw.previewed).toEqual([]);
+  });
+
+  test('minimum: 1 smallest unit of XRD and 9.99… XRD are refused; exactly 10 XRD builds', async () => {
+    for (const amountX of ['0.000000000000000001', '9.999999999999999999']) {
+      const gw = lockFeeGw();
+      await expect(
+        buildAndPreview(gw, { action: 'deposit', account: acct, poolAddress: XRD_STAKING_ADDRESS, amountX }),
+      ).rejects.toThrow(/minimum deposit is 10 XRD/);
+      expect(gw.previewed).toEqual([]);
+    }
+    const r = await buildAndPreview(lockFeeGw(), { action: 'deposit', account: acct, poolAddress: XRD_STAKING_ADDRESS, amountX: '10' });
+    expect(r.preview.ok).toBe(true);
+  });
+
+  test('minimum: an LP deposit whose XRD leg is below 10 is refused', async () => {
+    const p = buildAndPreview(lockFeeGw(), {
+      action: 'deposit', account: acct, poolAddress: LF_BASIC, amountX: '100', amountY: '1',
+    });
+    await expect(p).rejects.toThrow(/minimum deposit is 10 XRD \(amountY is 1\)/);
+  });
+
+  test('minimum: a one-sided deposit of the non-XRD token is refused (sends no XRD)', async () => {
+    const p = buildAndPreview(lockFeeGw(), {
+      action: 'deposit', account: acct, poolAddress: LF_PRECISION, amountX: '0.5', amountY: '0', range: { below: 3, above: 3 },
+    });
+    await expect(p).rejects.toThrow(/sends no XRD/);
+  });
+
+  test('minimum on the dry-run: the pool hands back most of the XRD → refused, not signable', async () => {
+    // 100 XRD withdrawn, 99.5 returned as change: the account really sends 0.5 XRD.
+    const change = (m: string) => [{
+      index: 0, resource_changes: [
+        { resource_address: XRD, component_entity: { entity_address: acct }, amount: '-100' },
+        { resource_address: XRD, component_entity: { entity_address: acct }, amount: '99.5' },
+      ],
+    }];
+    const r = await buildAndPreview(lockFeeGw(undefined, change), {
+      action: 'deposit', account: acct, poolAddress: LF_BASIC, amountX: '0.000001', amountY: '100',
+    });
+    expect(r.preview.ok).toBe(false);
+    expect(r.preview.status).toBe('Refused');
+    expect(r.preview.error).toContain('0.5 XRD');
+  });
+});
+
+// ── exits are untouched by the guard, and work with every deposit paused ────
+
+describe('exits: unchanged by the deposit guard, working with deposits paused', () => {
+  const KINDS_ENV = DEPOSIT_SWITCH_ENV.kinds;
+  const saved = process.env[KINDS_ENV];
+  const acct = EXIT_ACCOUNT;
+  beforeEach(() => {
+    process.env[KINDS_ENV] = 'ociswap_basic,ociswap_precision,caviarnine_weighted,caviarnine_quantaswap,defiplaza_pair';
+    _clearResolverCache();
+    _clearBoardCache();
+    _clearDivisibilityCache();
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env[KINDS_ENV]; else process.env[KINDS_ENV] = saved;
+    _clearResolverCache();
+  });
+
+  // Amounts a deposit would refuse (finer than 6/8 dp, far below 10 XRD): an
+  // exit spends position units the user already holds and must still build.
+  const exits: Array<[string, Parameters<typeof buildAndPreview>[1], string]> = [
+    ['ociswap_basic', { action: 'withdraw', account: acct, poolAddress: LF_BASIC, lpAmount: '0.000000000000000001' },
+      `"withdraw" Address("${LF_BASIC_LP}") Decimal("0.000000000000000001")`],
+    ['caviarnine_weighted', { action: 'withdraw', account: acct, poolAddress: LF_WEIGHTED, lpAmount: '0.123456789' },
+      `"withdraw" Address("${LF_WEIGHTED_LP}") Decimal("0.123456789")`],
+    ['ociswap_precision', { action: 'withdraw', account: acct, poolAddress: LF_PRECISION, localId: '#421#' },
+      'NonFungibleLocalId("#421#")'],
+    ['caviarnine_quantaswap', { action: 'withdraw', account: acct, poolAddress: LF_QUANTA, localId: EXIT_CLAIM_ID },
+      `NonFungibleLocalId("${EXIT_CLAIM_ID}")`],
+    ['defiplaza_pair', { action: 'withdraw', account: acct, poolAddress: LF_PLAZA, lpToken: LF_PLAZA_QUOTE_LP, lpAmount: '1' },
+      `"withdraw" Address("${LF_PLAZA_QUOTE_LP}") Decimal("1")`],
+    ['native unstake', { action: 'withdraw', account: acct, poolAddress: XRD_STAKING_ADDRESS, validator: EXIT_VALIDATOR, lpAmount: '0.5' },
+      `"withdraw" Address("${EXIT_LSU}") Decimal("0.5")`],
+    ['native claim', { action: 'claim', account: acct, poolAddress: XRD_STAKING_ADDRESS, validator: EXIT_VALIDATOR, localId: EXIT_CLAIM_ID },
+      `NonFungibleLocalId("${EXIT_CLAIM_ID}")`],
+  ];
+
+  test('every deposit kind is paused (precondition)', async () => {
+    await expect(buildAndPreview(lockFeeGw(), {
+      action: 'deposit', account: acct, poolAddress: LF_BASIC, amountX: '10', amountY: '100',
+    })).rejects.toThrow(/deposits are paused/);
+  });
+
+  test.each(exits)('%s exit builds and previews ok, amount passed through as typed', async (_k, req, expected) => {
+    const r = await buildAndPreview(lockFeeGw(), req);
+    expect(r.preview.ok).toBe(true);
+    expect(r.manifest).toContain(expected);
   });
 });

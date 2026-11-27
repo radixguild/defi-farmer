@@ -49,6 +49,10 @@ export interface DexPoolInfo {
   shortage?: string;
   /** Set when the operator has paused deposits into this pool (exits are separate). */
   depositsPaused?: true;
+  /** Smallest deposit in XRD; the server refuses anything below it. */
+  minDepositXrd?: string;
+  /** Decimal places each token allows; absent if the server could not read them. */
+  divisibility?: { x: number; y: number };
   suggestion?: RangeSuggestion;
   relAnnualVol?: number;
 }

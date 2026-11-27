@@ -39,6 +39,7 @@ import {
   type DexBuildResult,
   type DexPoolInfo,
 } from "@/lib/api/dex";
+import { depositAmountProblems, XRD_RESOURCE } from "@/lib/deposit-amount";
 
 type TimeRange = "7d" | "30d";
 
@@ -201,9 +202,23 @@ export default function OpportunityDetailPage() {
           ? posDec(amountX) || posDec(amountY)
           : posDec(amountX) && posDec(amountY);
   const depositsPaused = poolInfo?.depositsPaused === true;
+  // Divisibility + minimum, as the server's deposit guard checks them (a hint
+  // here; the build refuses regardless).
+  const legX = { resource: isVenue ? XRD_RESOURCE : poolInfo?.tokenX ?? "", label: isVenue ? "XRD" : labelX, divisibility: poolInfo?.divisibility?.x };
+  const legY = { resource: poolInfo?.tokenY ?? "", label: labelY, divisibility: poolInfo?.divisibility?.y };
+  const amountProblems = !poolInfo
+    ? []
+    : depositAmountProblems(
+        kind === "defiplaza_pair"
+          ? [plazaSide === "x" ? { ...legX, amount: amountX } : { ...legY, amount: amountY }]
+          : isVenue
+            ? [{ ...legX, amount: amountX }]
+            : [{ ...legX, amount: amountX }, { ...legY, amount: amountY }],
+        poolInfo.minDepositXrd,
+      );
   const canDeposit =
     connected && !!account && !!poolInfo && kind !== "unsupported" && !depositsPaused &&
-    amountsValid && oppsSource === "live";
+    amountsValid && amountProblems.length === 0 && oppsSource === "live";
 
   const depositRequest = (coAmount?: string): DexBuildRequest => {
     const base = { action: "deposit" as const, account: account!, poolAddress: address };
@@ -671,6 +686,14 @@ export default function OpportunityDetailPage() {
                       </p>
                     )}
                   </div>
+                )}
+
+                {amountProblems.length > 0 && (
+                  <ul className="space-y-1 text-xs text-destructive" role="alert">
+                    {amountProblems.map((p) => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
                 )}
 
                 {poolInfo.concentrated && (

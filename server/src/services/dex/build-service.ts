@@ -37,9 +37,11 @@ import { getValidatorBoard, type ValidatorRow } from '../validator-board.js';
 import { XRD_STAKING_ADDRESS } from '../staking.js';
 import { LSULP_RESOURCE } from '../lsu-pool.js';
 import { currentDepositSwitch, depositRefusal } from './deposit-switch.js';
+import {
+  checkDepositAmounts, refuseBelowMinimum, readDivisibility, DepositAmountError,
+  MIN_DEPOSIT_XRD, XRD_RESOURCE, type DepositLeg,
+} from './deposit-guard.js';
 
-const XRD_RESOURCE =
-  'resource_rdx1tknxxxxxxxxxradxrdxxxxxxxxx009923554798xxxxxxxxxradxrd';
 
 /// Caller-facing validation failure → HTTP 400 (distinct from Gateway/internal → 500).
 export class DexBuildError extends Error {
@@ -282,6 +284,11 @@ export interface PoolInfoResult {
   /// True when the operator deposit switch refuses deposits into this pool, so
   /// the UI can say "paused" instead of failing at build time. Absent otherwise.
   depositsPaused?: true;
+  /// Deposit form hints (deposit-guard.ts). The server enforces both on build;
+  /// the form uses them to say so before a round trip. `divisibility` is absent
+  /// when the ledger read failed (the build still refuses a bad amount).
+  minDepositXrd?: string;
+  divisibility?: { x: number; y: number };
   /// Concentrated pools with live pair risk only: the optimizer's pick.
   suggestion?: RangeChoice;
   relAnnualVol?: number;
@@ -318,6 +325,13 @@ export async function poolInfo(
   }
   pool = await refreshDynamic(gw, pool);
   out.shortage = pool.shortage;
+  out.minDepositXrd = MIN_DEPOSIT_XRD;
+  try {
+    const div = await readDivisibility(gw, [pool.tokenX, pool.tokenY]);
+    out.divisibility = { x: div.get(pool.tokenX) as number, y: div.get(pool.tokenY) as number };
+  } catch {
+    // form hint only — buildAndPreview reads it again and fails closed
+  }
 
   if (pool.concentrated && deps.pairRisk) {
     try {
@@ -476,6 +490,24 @@ export async function buildAndPreview(gw: GatewayClient, req: DexBuildRequest): 
       throw new DexBuildError(`unsupported pool kind: ${pool.kind}`);
   }
 
+  // Deposit amount guard (deposit-guard.ts): divisibility + minimum, before any
+  // manifest is built or previewed. Legs keep the user's amount -> token pairing.
+  const legs: DepositLeg[] = pool.kind === 'defiplaza_pair'
+    ? [
+        { resource: dr.inputToken as string, amount: dr.inputAmount as string, label: 'inputAmount' },
+        ...(dr.coAmount !== undefined
+          ? [{
+              resource: dr.inputToken === pool.tokenX ? pool.tokenY : pool.tokenX,
+              amount: dr.coAmount, label: 'coAmount',
+            }]
+          : []),
+      ]
+    : [
+        { resource: pool.tokenX, amount: dr.amountX as string, label: 'amountX' },
+        { resource: pool.tokenY, amount: dr.amountY as string, label: 'amountY' },
+      ];
+  await guardAmounts(gw, legs);
+
   let manifest: string;
   try {
     manifest = buildDeposit(dr);
@@ -510,7 +542,17 @@ export async function buildAndPreview(gw: GatewayClient, req: DexBuildRequest): 
     const otherToken = req.inputToken === pool.tokenX ? pool.tokenY : pool.tokenX;
     return { manifest, preview, pool: poolInfo, needsCoLiquidity: { otherToken } };
   }
-  return { manifest, preview, pool: poolInfo, range };
+  return { manifest, preview: refuseBelowMinimum(preview), pool: poolInfo, range };
+}
+
+/// deposit-guard refusals are caller input -> 400.
+async function guardAmounts(gw: GatewayClient, legs: DepositLeg[]): Promise<void> {
+  try {
+    await checkDepositAmounts(gw, legs);
+  } catch (err) {
+    if (err instanceof DepositAmountError) throw new DexBuildError(err.message);
+    throw err;
+  }
 }
 
 // ─── single-sided venues (native staking · LSULP · Weft lending) ──────────────
@@ -532,6 +574,8 @@ function venuePoolInfo(address: string, venue: VenueKind): PoolInfoResult {
     tokenX: XRD_RESOURCE,
     tokenY: XRD_RESOURCE,
     lpKind: 'fungible',
+    minDepositXrd: MIN_DEPOSIT_XRD,
+    divisibility: { x: 18, y: 18 },
     // Same flag the deposit switch sets, so the UI hides the deposit form.
     ...(venueDepositRefusal(venue) ? { depositsPaused: true as const } : {}),
   };
@@ -590,6 +634,7 @@ async function buildVenueDepositAndPreview(
   const amount = req.amountX;
   if (amount === undefined) throw new DexBuildError('deposit needs an amount');
   assertAmountOr400(amount, 'amount');
+  await guardAmounts(gw, [{ resource: XRD_RESOURCE, amount, label: 'amount' }]);
 
   const fee = serverFee();
   const opts: BuildOpts = fee ? { fee } : {};
@@ -621,7 +666,7 @@ async function buildVenueDepositAndPreview(
   }
 
   const preview = await previewManifest(gw, manifest, req.account);
-  return { manifest, preview, pool: poolInfoOut };
+  return { manifest, preview: refuseBelowMinimum(preview), pool: poolInfoOut };
 }
 
 // ─── single-sided venue EXITS ─────────────────────────────────────────────────

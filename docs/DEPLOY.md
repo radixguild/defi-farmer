@@ -47,8 +47,8 @@ The agent's working directory is `server/` (`package.json:13`), so the relative 
 ## 2. Before you deploy
 
 - **Operator step, not in this repo:** write down the commit the machine runs now. That is
-  the rollback target. [STATE.md](../STATE.md) records that the live commit has not been
-  recorded so far.
+  the rollback target. [STATE.md](../STATE.md) records the last commit read
+  from the live site; read it again before you deploy.
 - **Operator step, not in this repo:** stop the agent, then copy the SQLite file
   (`DB_PATH`), its `-wal` and `-shm` files if they exist, and the env files aside. The
   database runs in WAL mode (`server/src/db/schema.ts:19`), so a copy of the `.db` file

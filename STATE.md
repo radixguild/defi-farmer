@@ -3,6 +3,10 @@
 _Updated 2026-11-19. This is the project's public status page. It changes when the facts
 change, not on a schedule._
 
+**Deployed commit (note added 2026-11-27, not re-read that day):** the live site runs `16b35b6`
+(the deployed-commit marker was read on 2026-11-19 and 2026-11-24). Commits on `main` since then
+change documentation only (#15, #16, #17).
+
 ## Now (2026-11-19)
 
 What changed in code with this update. Whether the live site runs it depends on the next

@@ -1,6 +1,18 @@
-Draft from the repository contents; not yet run end to end from a clean machine.
-
 # Deploy and rollback
+
+## What has run, and when
+
+| Step | Status |
+|---|---|
+| 2. Before you deploy: copy the database | Run on 2026-11-19, before the `8934fd2` deploy |
+| 2. Before you deploy: read `DEPLOYED_COMMIT`, range check | Not yet run. The marker did not exist before the `8934fd2` deploy; a read before the `16b35b6` deploy is not recorded |
+| 4. Ship and build (sync `server/` and `frontend/`, frozen installs, dapp build) | Run on 2026-11-19, for `8934fd2` and then `16b35b6` |
+| 6. Restart, verify, write `DEPLOYED_COMMIT` | Run on 2026-11-19: local health of both processes, `/api/status`, `/yields`, the deposit-switch read-back, the marker written. Checks 1, 3, 5 and 6 are not recorded. The marker was read again on 2026-11-24 ([STATE.md](../STATE.md)) |
+| Rollback | Not yet run |
+| 1. Prerequisites on a clean machine (runtime, proxy, process manager) | Not yet run from this page. The host was set up before this page existed |
+
+[STATE.md](../STATE.md) records the commit the live site runs and what is switched off.
+This page does not change any of that.
 
 This is the deploy path the repository itself defines: its `package.json` scripts, its
 config and its health routes. The reference deployment's own tooling (deploy script,
@@ -46,9 +58,14 @@ The agent's working directory is `server/` (`package.json:13`), so the relative 
 
 ## 2. Before you deploy
 
-- **Operator step, not in this repo:** write down the commit the machine runs now. That is
-  the rollback target. [STATE.md](../STATE.md) records the last commit read
-  from the live site; read it again before you deploy.
+- Read `<app-dir>/DEPLOYED_COMMIT` on `<host>` (written at the end of step 6) and compare it
+  with the commit [STATE.md](../STATE.md) records. Write it down: it is the rollback target.
+  If they differ, find out why before you go on.
+- List what changed between that commit and the one you deploy (`git log`, `git diff --stat`).
+  Note any change outside `server/` and `frontend/` (see step 4), any change to
+  `server/src/db/schema.ts` (step 5), and any new or changed name in
+  [CONFIG.md](CONFIG.md) (step 3).
+- The commit you deploy should be on `main` with CI green. Check it on GitHub.
 - **Operator step, not in this repo:** stop the agent, then copy the SQLite file
   (`DB_PATH`), its `-wal` and `-shm` files if they exist, and the env files aside. The
   database runs in WAL mode (`server/src/db/schema.ts:19`), so a copy of the `.db` file
@@ -86,20 +103,48 @@ deployment, from the code and the README:
   Which file the agent actually loads depends on how the process is started (working
   directory `server/`); confirm it with the startup log in step 6.
 
-## 4. Build
+## 4. Ship and build
 
-From `<app-dir>`, on the commit to deploy:
+This is the route the 2026-11-19 deploys used. It copies two folders from a clean checkout
+into `<app-dir>`; it does not run `git` on `<host>`.
 
-```bash
-bun install --frozen-lockfile
-(cd server && bun install --frozen-lockfile)
-(cd frontend && bun install --frozen-lockfile)
-bun run validate          # server + frontend typecheck, then the full test suite
-bun run build             # cd frontend && bunx next build
-```
+**Do not use the older deploy script.** An operator deploy script from before this repository
+was published is not part of this tree ([PROVENANCE.md](../PROVENANCE.md), "What was left
+out"). It syncs, with deletion, a process-manager file and a `scripts/` folder, and this tree
+has neither. Run against this tree it would stop halfway, or delete the host's own
+operator scripts in `<app-dir>/scripts/`. Use the steps below instead.
 
-`--frozen-lockfile` is what CI runs (`.github/workflows/ci.yml:29,55,71`). `bun run validate`
-and `bun run build` are `package.json:19` and `:10`. Stop if either fails.
+1. On a machine other than `<host>`, make a clean checkout of `<commit>`.
+   `git status --porcelain` must print nothing. Write down `git rev-parse <commit>^{tree}`,
+   so you can show later which tree you shipped.
+2. Sync `server/` and `frontend/` from that checkout into `<app-dir>/server/` and
+   `<app-dir>/frontend/`, deleting files that no longer exist upstream, and excluding what
+   lives only on the host:
+   - from `server/`: `node_modules/`, `data/`, `logs/`, `.env*`;
+   - from `frontend/`: `node_modules/`, `.next/`, `.env*`.
+
+   Run the sync as a dry run first (with `rsync`: `-n -i` on the same command line) and read
+   the list of files it would change or delete. Stop if it would touch the database, an env
+   file or anything outside those two folders. With `rsync` on macOS, write each exclude on
+   the command line; do not pass them through a shell variable.
+3. Root files (`package.json`, `bun.lock`, `bunfig.toml`) are not synced by this route. If
+   the range changes one of them, copy it as well (not run on 2026-11-19). The root
+   dependencies are development-only (`typescript`), and `agent:start` and `build` change
+   into the subfolders (`package.json:10,13`), so the deploy does not install them.
+4. On `<host>`, from `<app-dir>`:
+
+   ```bash
+   (cd server && bun install --frozen-lockfile)
+   (cd frontend && bun install --frozen-lockfile)
+   (cd frontend && bunx next build)
+   ```
+
+   `--frozen-lockfile` is what CI runs (`.github/workflows/ci.yml:29,55,71`); the build is
+   `package.json:10`. Stop if either fails. The running processes keep serving until step 6,
+   but the dapp process now runs beside a rebuilt `frontend/.next`, so restart soon after.
+
+The full test suite (`bun run validate`, `package.json:19`) is CI's merge gate. Running it on
+`<host>` is optional; the 2026-11-19 record does not show a run there.
 
 ## 5. Database
 
@@ -111,7 +156,14 @@ additive.
 
 ## 6. Restart and verify
 
-**Operator step, not in this repo:** restart both processes through the process manager.
+**Operator step, not in this repo:** stop the agent, copy the database (step 2), then start
+or restart both processes through the process manager, and save its process list so the same
+processes come back after a reboot.
+
+If you changed the agent's environment for this deploy: a process manager that saves each
+process's environment (pm2 does) can keep serving the old values from its saved copy, even
+after a restart. On 2026-11-19 the agent process was deleted from the process manager and
+started again, then the list was saved. Confirm the new values with the startup log below.
 
 Then check, in order:
 
@@ -132,24 +184,35 @@ Then check, in order:
 7. If a deposit switch is set, read it back as in
    [Pausing deposits](DEX-INTEGRATION.md#pausing-deposits-operator-switch) ("Check it").
 
-**Operator step, not in this repo:** record the deployed commit (for example in
-[STATE.md](../STATE.md)).
+8. Write the full deployed commit to `<app-dir>/DEPLOYED_COMMIT` on `<host>`, and read it
+   back. The sync in step 4 copies no `.git` folder, so this file is the only record on the
+   host of which commit runs.
+9. Record the deployed commit and date in [STATE.md](../STATE.md) in a follow-up pull
+   request.
 
 ## Rollback to the previous build
 
-If a check in step 6 fails, or the new build misbehaves:
+Not yet run. If a check in step 6 fails, or the new build misbehaves:
 
 1. To stop new deposits only, while exits keep working, the deposit switch may be enough
    and needs only an agent restart
    ([Pausing deposits](DEX-INTEGRATION.md#pausing-deposits-operator-switch)). It covers LP
    pool kinds, not native staking.
-2. **Operator step, not in this repo:** put the tree back to the commit recorded in step 2.
-3. Restore the env files saved in step 2 if they changed.
-4. Re-run step 4 (install, validate, build) on that commit. The dapp build in
-   `frontend/.next` belongs to the commit it was built from; `NEXT_PUBLIC_*` values are
-   baked into it.
-5. Restart both processes and run step 6 again.
+2. Redeploy the previous commit, the one you read from `DEPLOYED_COMMIT` in step 2: run
+   step 4 with a clean checkout of that commit (same sync, same excludes, dry run first).
+   The dapp build in `frontend/.next` belongs to the commit it was built from;
+   `NEXT_PUBLIC_*` values are baked into it, so rebuild it.
+3. Restore the env files saved in step 2 if they changed, and mind the saved process
+   environment (step 6).
+4. Restart both processes, run step 6 again, and write the previous commit to
+   `DEPLOYED_COMMIT`.
+5. Record the rollback in [STATE.md](../STATE.md) in a follow-up pull request.
 6. Database: the schema changes are additive, so the previous code should still open the
    newer file (unverified). Restore the copy from step 2 only if the data itself is wrong,
    with the agent stopped, replacing the `.db` file and any `-wal` / `-shm` files beside
    it; rows written since the copy are lost.
+
+What survives a rollback: the database (every row written since the deploy, unless you
+restore the copy), the env files (a code rollback does not touch them), and anything on the
+ledger. The app holds no key and signs nothing, so there is no on-ledger action of its own to
+undo. In-memory state of the two processes is lost on any restart, rollback or not.

@@ -4,9 +4,10 @@
 
 | Step | Status |
 |---|---|
-| 2. Before you deploy (note the running commit, copy the database) | Run on 2026-11-19, twice |
+| 2. Before you deploy: copy the database | Run on 2026-11-19, before the `8934fd2` deploy |
+| 2. Before you deploy: read `DEPLOYED_COMMIT`, range check | Not yet run. The marker did not exist before the `8934fd2` deploy; a read before the `16b35b6` deploy is not recorded |
 | 4. Ship and build (sync `server/` and `frontend/`, frozen installs, dapp build) | Run on 2026-11-19, for `8934fd2` and then `16b35b6` |
-| 6. Restart, verify, record `DEPLOYED_COMMIT` | Run on 2026-11-19; the marker was read again on 2026-11-24 ([STATE.md](../STATE.md)) |
+| 6. Restart, verify, write `DEPLOYED_COMMIT` | Run on 2026-11-19: local health of both processes, `/api/status`, `/yields`, the deposit-switch read-back, the marker written. Checks 1, 3, 5 and 6 are not recorded. The marker was read again on 2026-11-24 ([STATE.md](../STATE.md)) |
 | Rollback | Not yet run |
 | 1. Prerequisites on a clean machine (runtime, proxy, process manager) | Not yet run from this page. The host was set up before this page existed |
 
@@ -127,7 +128,9 @@ operator scripts in `<app-dir>/scripts/`. Use the steps below instead.
    file or anything outside those two folders. With `rsync` on macOS, write each exclude on
    the command line; do not pass them through a shell variable.
 3. Root files (`package.json`, `bun.lock`, `bunfig.toml`) are not synced by this route. If
-   the range changes one of them, copy it as well (not run on 2026-11-19).
+   the range changes one of them, copy it as well (not run on 2026-11-19). The root
+   dependencies are development-only (`typescript`), and `agent:start` and `build` change
+   into the subfolders (`package.json:10,13`), so the deploy does not install them.
 4. On `<host>`, from `<app-dir>`:
 
    ```bash
